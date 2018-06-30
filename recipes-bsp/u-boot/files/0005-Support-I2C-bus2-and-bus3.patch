@@ -1,0 +1,53 @@
+From 670ba8515f06faf7e45ad75d65344bed0e62259a Mon Sep 17 00:00:00 2001
+From: StanleyLiu <stanley_liu@accton.com>
+Date: Thu, 14 Jun 2018 11:11:41 +0800
+Subject: [PATCH 5/8] Support I2C bus2 and bus3
+
+---
+ drivers/i2c/fsl_i2c.c |   22 +++++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/i2c/fsl_i2c.c b/drivers/i2c/fsl_i2c.c
+index 2db75d0..59043ed 100644
+--- a/drivers/i2c/fsl_i2c.c
++++ b/drivers/i2c/fsl_i2c.c
+@@ -46,11 +46,18 @@
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+-static const struct fsl_i2c *i2c_dev[2] = {
++/* stanley_liu: add I2C bus3, bus4 */
++static const struct fsl_i2c *i2c_dev[4] = {
+ 	(struct fsl_i2c *)(CONFIG_SYS_IMMR + CONFIG_SYS_FSL_I2C_OFFSET),
+ #ifdef CONFIG_SYS_FSL_I2C2_OFFSET
+ 	(struct fsl_i2c *)(CONFIG_SYS_IMMR + CONFIG_SYS_FSL_I2C2_OFFSET)
+ #endif
++#ifdef CONFIG_SYS_FSL_I2C3_OFFSET
++	, (struct fsl_i2c *)(CONFIG_SYS_IMMR + CONFIG_SYS_FSL_I2C3_OFFSET)
++#endif
++#ifdef CONFIG_SYS_FSL_I2C4_OFFSET
++	, (struct fsl_i2c *)(CONFIG_SYS_IMMR + CONFIG_SYS_FSL_I2C4_OFFSET)
++#endif
+ };
+ 
+ /* I2C speed map for a DFSR value of 1 */
+@@ -539,3 +546,16 @@ U_BOOT_I2C_ADAP_COMPLETE(fsl_1, fsl_i2c_init, fsl_i2c_probe, fsl_i2c_read,
+ 			 CONFIG_SYS_FSL_I2C2_SPEED, CONFIG_SYS_FSL_I2C2_SLAVE,
+ 			 1)
+ #endif
++/* stanley_liu: add I2C bus3, bus4 */
++#ifdef CONFIG_SYS_FSL_I2C3_OFFSET
++U_BOOT_I2C_ADAP_COMPLETE(fsl_2, fsl_i2c_init, fsl_i2c_probe, fsl_i2c_read,
++			fsl_i2c_write, fsl_i2c_set_bus_speed,
++			CONFIG_SYS_FSL_I2C3_SPEED, CONFIG_SYS_FSL_I2C3_SLAVE,
++			2)
++#endif
++#ifdef CONFIG_SYS_FSL_I2C4_OFFSET
++U_BOOT_I2C_ADAP_COMPLETE(fsl_3, fsl_i2c_init, fsl_i2c_probe, fsl_i2c_read,
++			fsl_i2c_write, fsl_i2c_set_bus_speed,
++			CONFIG_SYS_FSL_I2C4_SPEED, CONFIG_SYS_FSL_I2C4_SLAVE,
++			3)
++#endif
+-- 
+1.7.9.5
+

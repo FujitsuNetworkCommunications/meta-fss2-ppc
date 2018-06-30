@@ -1,0 +1,24 @@
+From 0b1e8d0ff26dfac21a6435a998762959c45177d7 Mon Sep 17 00:00:00 2001
+From: StanleyLiu <stanley_liu@accton.com>
+Date: Thu, 14 Jun 2018 11:15:45 +0800
+Subject: [PATCH 7/8] Remove unnecessary debug message
+
+---
+ arch/powerpc/cpu/mpc85xx/cmd_errata.c |    1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/arch/powerpc/cpu/mpc85xx/cmd_errata.c b/arch/powerpc/cpu/mpc85xx/cmd_errata.c
+index d370c88..b363612 100644
+--- a/arch/powerpc/cpu/mpc85xx/cmd_errata.c
++++ b/arch/powerpc/cpu/mpc85xx/cmd_errata.c
+@@ -329,7 +329,6 @@ static int do_errata(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+ /* stanley_liu add errata A009942 */
+ #ifdef CONFIG_SYS_FSL_ERRATUM_A009942
+ 	puts("Work-around for Erratum A009942 enabled\n");
+-	printf("Work-around for Erratum A009942 enabled\n");
+ #endif
+ 	return 0;
+ }
+-- 
+1.7.9.5
+

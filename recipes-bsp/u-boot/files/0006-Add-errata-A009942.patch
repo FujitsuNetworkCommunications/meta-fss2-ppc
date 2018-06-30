@@ -1,0 +1,83 @@
+From a22a09eed9e516befd9f09a672d6c9b8909f52c5 Mon Sep 17 00:00:00 2001
+From: StanleyLiu <stanley_liu@accton.com>
+Date: Thu, 14 Jun 2018 11:13:32 +0800
+Subject: [PATCH 6/8] Add errata A009942
+
+---
+ arch/powerpc/cpu/mpc85xx/cmd_errata.c     |    5 +++++
+ arch/powerpc/include/asm/config_mpc85xx.h |    2 ++
+ drivers/ddr/fsl/mpc85xx_ddr_gen3.c        |   22 +++++++++++++++++++++-
+ 3 files changed, 28 insertions(+), 1 deletion(-)
+
+diff --git a/arch/powerpc/cpu/mpc85xx/cmd_errata.c b/arch/powerpc/cpu/mpc85xx/cmd_errata.c
+index e73b546..d370c88 100644
+--- a/arch/powerpc/cpu/mpc85xx/cmd_errata.c
++++ b/arch/powerpc/cpu/mpc85xx/cmd_errata.c
+@@ -326,6 +326,11 @@ static int do_errata(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+ #if defined(CONFIG_SYS_FSL_B4860QDS_XFI_ERR) && defined(CONFIG_B4860QDS)
+ 	puts("Work-around for Erratum XFI on B4860QDS enabled\n");
+ #endif
++/* stanley_liu add errata A009942 */
++#ifdef CONFIG_SYS_FSL_ERRATUM_A009942
++	puts("Work-around for Erratum A009942 enabled\n");
++	printf("Work-around for Erratum A009942 enabled\n");
++#endif
+ 	return 0;
+ }
+ 
+diff --git a/arch/powerpc/include/asm/config_mpc85xx.h b/arch/powerpc/include/asm/config_mpc85xx.h
+index 6c16af3..fad7289 100644
+--- a/arch/powerpc/include/asm/config_mpc85xx.h
++++ b/arch/powerpc/include/asm/config_mpc85xx.h
+@@ -889,6 +889,8 @@ defined(CONFIG_PPC_T1014) || defined(CONFIG_PPC_T1013)
+ #define CONFIG_SYS_FSL_ERRATUM_A006593
+ #define CONFIG_SYS_FSL_ERRATUM_A007186
+ #define CONFIG_SYS_FSL_ERRATUM_A006379
++/* stanley_liu add errata A009942 */
++#define CONFIG_SYS_FSL_ERRATUM_A009942
+ #define ESDHCI_QUIRK_BROKEN_TIMEOUT_VALUE
+ #define CONFIG_SYS_FSL_SFP_VER_3_0
+ 
+diff --git a/drivers/ddr/fsl/mpc85xx_ddr_gen3.c b/drivers/ddr/fsl/mpc85xx_ddr_gen3.c
+index 194a714..655c6a8 100644
+--- a/drivers/ddr/fsl/mpc85xx_ddr_gen3.c
++++ b/drivers/ddr/fsl/mpc85xx_ddr_gen3.c
+@@ -44,7 +44,11 @@ void fsl_ddr_set_memctl_regs(const fsl_ddr_cfg_regs_t *regs,
+ #ifdef CONFIG_SYS_FSL_ERRATUM_DDR_A003
+ 	u32 save1, save2;
+ #endif
+-
++/* stanley_liu add errata A009942 */
++#ifdef CONFIG_SYS_FSL_ERRATUM_A009942
++	ulong ddr_freq;
++	u32 tmp;
++#endif
+ 	switch (ctrl_num) {
+ 	case 0:
+ 		ddr = (void *)CONFIG_SYS_FSL_DDR_ADDR;
+@@ -189,6 +193,22 @@ void fsl_ddr_set_memctl_regs(const fsl_ddr_cfg_regs_t *regs,
+ 	out_be32(&ddr->debug[21], 0x24000000);
+ #endif /* CONFIG_SYS_FSL_ERRATUM_DDR_A003474 */
+ 
++/* stanley_liu add errata A009942 */
++#ifdef CONFIG_SYS_FSL_ERRATUM_A009942
++	ddr_freq = get_ddr_freq(ctrl_num) / 1000000;
++	tmp = in_be32(&ddr->debug[28]);
++	if (ddr_freq <= 1333)
++		out_be32(&ddr->debug[28], tmp | 0x0080006a);
++	else if (ddr_freq <= 1600){
++		out_be32(&ddr->debug[28], tmp | 0x0070004D);
++		printf("ddr->debug[28]=%x\n",ddr->debug[28]);
++	}
++	else if (ddr_freq <= 1867)
++		out_be32(&ddr->debug[28], tmp | 0x00700076);
++	else if (ddr_freq <= 2133)
++		out_be32(&ddr->debug[28], tmp | 0x0060007b);
++#endif
++
+ 	/*
+ 	 * For RDIMMs, JEDEC spec requires clocks to be stable before reset is
+ 	 * deasserted. Clocks start when any chip select is enabled and clock
+-- 
+1.7.9.5
+
