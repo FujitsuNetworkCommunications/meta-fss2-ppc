@@ -26,7 +26,13 @@ SRC_URI += "file://0001-Chage-NOR-flash-szie-to-16M.patch \
             file://0005-Support-I2C-bus2-and-bus3.patch \
             file://0006-Add-errata-A009942.patch \
             file://0007-Remove-unnecessary-debug-message.patch \
-            file://0008-Remove-unnecessary-message.patch "
+            file://0008-Remove-unnecessary-message.patch \
+            file://0009-Remove-PCIE2-and-PCIE3-since-we-don-t-use.patch \
+            file://0010-Add-board-T600.patch \
+            file://0011-Add-board-T600.patch \
+            file://0012-Move-back-modifications-on-board-t208xrdb.patch \
+            file://0013-Don-t-load-MBCNT-if-it-s-already-present-in-PCIE.patch \
+            "
 
 python () {
     if d.getVar("TCMODE", True) == "external-fsl":

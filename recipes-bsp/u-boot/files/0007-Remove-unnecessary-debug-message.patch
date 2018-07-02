@@ -1,7 +1,7 @@
 From 0b1e8d0ff26dfac21a6435a998762959c45177d7 Mon Sep 17 00:00:00 2001
 From: StanleyLiu <stanley_liu@accton.com>
 Date: Thu, 14 Jun 2018 11:15:45 +0800
-Subject: [PATCH 7/8] Remove unnecessary debug message
+Subject: [PATCH 07/13] Remove unnecessary debug message
 
 ---
  arch/powerpc/cpu/mpc85xx/cmd_errata.c |    1 -

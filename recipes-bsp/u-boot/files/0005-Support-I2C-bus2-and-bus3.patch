@@ -1,7 +1,7 @@
 From 670ba8515f06faf7e45ad75d65344bed0e62259a Mon Sep 17 00:00:00 2001
 From: StanleyLiu <stanley_liu@accton.com>
 Date: Thu, 14 Jun 2018 11:11:41 +0800
-Subject: [PATCH 5/8] Support I2C bus2 and bus3
+Subject: [PATCH 05/13] Support I2C bus2 and bus3
 
 ---
  drivers/i2c/fsl_i2c.c |   22 +++++++++++++++++++++-

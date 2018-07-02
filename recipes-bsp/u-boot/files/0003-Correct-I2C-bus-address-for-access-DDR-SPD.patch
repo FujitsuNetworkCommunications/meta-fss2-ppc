@@ -1,7 +1,7 @@
 From 15fd7732ff708def15eeb78ad8878334fddeebf2 Mon Sep 17 00:00:00 2001
 From: StanleyLiu <stanley_liu@accton.com>
 Date: Thu, 14 Jun 2018 11:04:40 +0800
-Subject: [PATCH 3/8] Correct I2C bus/address for access DDR SPD
+Subject: [PATCH 03/13] Correct I2C bus/address for access DDR SPD
 
 ---
  drivers/ddr/fsl/main.c     |   13 +++++++++++++

@@ -1,7 +1,7 @@
 From 70f91b114e538163361c5eea0ee45e56e531d801 Mon Sep 17 00:00:00 2001
 From: sam_liao <sam_liao@accton.com>
 Date: Tue, 12 Jun 2018 07:53:32 +0000
-Subject: [PATCH 1/8] Chage NOR flash szie to 16M 	modified:  
+Subject: [PATCH 01/13] Chage NOR flash szie to 16M 	modified:  
  include/configs/T208xRDB.h
 
 ---
