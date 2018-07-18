@@ -1,0 +1,26 @@
+From c43172ccc4bda36bccc5a76b7cf1cd957ffec43a Mon Sep 17 00:00:00 2001
+From: sam_liao <sam_liao@accton.com>
+Date: Wed, 20 Jun 2018 10:40:45 +0000
+Subject: [PATCH 1/2] Add Fujitsu T600 RCW binary image, this bin file relase
+ by Freescale FAE and Generate use CodeWarrior ICE 
+ new file:   t2080rdb/t2080rdb/PBL_T600.img
+
+---
+ t2080rdb/t2080rdb/PBL_T600.img |  Bin 0 -> 80 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+ create mode 100644 t2080rdb/t2080rdb/PBL_T600.img
+
+diff --git a/t2080rdb/t2080rdb/PBL_T600.img b/t2080rdb/t2080rdb/PBL_T600.img
+new file mode 100644
+index 0000000000000000000000000000000000000000..8961667f48df0e96b051725daa40eb28b83adb30
+GIT binary patch
+literal 80
+zcmZ1#x+;{BkCB0gjX_9=0Raj`8JHLtoEZKv6)-FW33Gtu7$M{iAjQrARL=|MGcd4n
+M2sbz^+kUqQ09{N8kpKVy
+
+literal 0
+HcmV?d00001
+
+-- 
+1.7.9.5
+

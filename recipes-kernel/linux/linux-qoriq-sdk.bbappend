@@ -2,6 +2,7 @@ FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
 SRC_URI_append += "file://${MACHINE}/dts                     \
                    file://${MACHINE}/kconfig                 \
                    file://patches/0001-Backport-PPC64-patch.patch \
+                   file://patches/0002-Chage-to-fit-T600-NOR-flash-partition.patch \
                    "
 # Example to add T600 patches/uboot env
 # SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-L100-PCI-kernel.patch     \
@@ -18,7 +19,8 @@ KERNEL_DEFCONFIG  = "../kconfig/${MACHINE}_config"
 
 # Device tree is todo at this point, picked an existing one to get kernel to compile
 # KERNEL_DEVICETREE = "${MACHINE}.dtb"
-KERNEL_DEVICETREE = "t4240emu.dtb"
+# KERNEL_DEVICETREE = "t4240emu.dtb"
+KERNEL_DEVICETREE = "t2080rdb.dtb t2080rdb-usdpaa.dtb"
 
 # Example syntax to add device tree
 # KERNEL_DEVICETREE_t600 = "${MACHINE}.dtb ${MACHINE}-f100.dtb"

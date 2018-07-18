@@ -1,0 +1,1677 @@
+From cf56709dcbefad669a188dbd44e1cf77fa784b68 Mon Sep 17 00:00:00 2001
+From: StanleyLiu <stanley_liu@accton.com>
+Date: Wed, 27 Jun 2018 18:38:39 +0800
+Subject: [PATCH 10/13] Add board T600
+
+---
+ arch/powerpc/include/asm/fsl_secure_boot.h |    3 +-
+ board/freescale/t600/Makefile              |   19 ++
+ board/freescale/t600/cdec_cpld.c           |  191 +++++++++++
+ board/freescale/t600/cdec_cpld.h           |   28 ++
+ board/freescale/t600/cpld.c                |   71 +++++
+ board/freescale/t600/cpld.h                |   42 +++
+ board/freescale/t600/ddr.c                 |  114 +++++++
+ board/freescale/t600/ddr.h                 |   47 +++
+ board/freescale/t600/eth_t600.c            |  106 +++++++
+ board/freescale/t600/law.c                 |   34 ++
+ board/freescale/t600/pci.c                 |   23 ++
+ board/freescale/t600/spl.c                 |  107 +++++++
+ board/freescale/t600/t600.c                |  474 ++++++++++++++++++++++++++++
+ board/freescale/t600/t600.h                |   13 +
+ board/freescale/t600/t600_pbi.cfg          |   41 +++
+ board/freescale/t600/t600_rcw.cfg          |   16 +
+ board/freescale/t600/tlb.c                 |  153 +++++++++
+ boards.cfg                                 |    1 +
+ common/board_r.c                           |   12 +
+ 19 files changed, 1494 insertions(+), 1 deletion(-)
+ create mode 100644 board/freescale/t600/Makefile
+ create mode 100644 board/freescale/t600/cdec_cpld.c
+ create mode 100644 board/freescale/t600/cdec_cpld.h
+ create mode 100644 board/freescale/t600/cpld.c
+ create mode 100644 board/freescale/t600/cpld.h
+ create mode 100644 board/freescale/t600/ddr.c
+ create mode 100644 board/freescale/t600/ddr.h
+ create mode 100644 board/freescale/t600/eth_t600.c
+ create mode 100644 board/freescale/t600/law.c
+ create mode 100644 board/freescale/t600/pci.c
+ create mode 100644 board/freescale/t600/spl.c
+ create mode 100644 board/freescale/t600/t600.c
+ create mode 100644 board/freescale/t600/t600.h
+ create mode 100644 board/freescale/t600/t600_pbi.cfg
+ create mode 100644 board/freescale/t600/t600_rcw.cfg
+ create mode 100644 board/freescale/t600/tlb.c
+
+diff --git a/arch/powerpc/include/asm/fsl_secure_boot.h b/arch/powerpc/include/asm/fsl_secure_boot.h
+index 03f249e..2f33813 100644
+--- a/arch/powerpc/include/asm/fsl_secure_boot.h
++++ b/arch/powerpc/include/asm/fsl_secure_boot.h
+@@ -37,7 +37,8 @@
+ 	defined(CONFIG_T1040QDS) || \
+ 	defined(CONFIG_T104xRDB) || \
+ 	defined(CONFIG_PPC_T1024) || \
+-	defined(CONFIG_PPC_T1023)
++	defined(CONFIG_PPC_T1023) || \
++	defined(CONFIG_T600)
+ #define CONFIG_SYS_CPC_REINIT_F
+ #define CONFIG_KEY_REVOCATION
+ #undef CONFIG_SYS_INIT_L3_ADDR
+diff --git a/board/freescale/t600/Makefile b/board/freescale/t600/Makefile
+new file mode 100644
+index 0000000..2158e42
+--- /dev/null
++++ b/board/freescale/t600/Makefile
+@@ -0,0 +1,19 @@
++#
++# Copyright 2014 Freescale Semiconductor, Inc.
++#
++# SPDX-License-Identifier:      GPL-2.0+
++#
++
++ifdef CONFIG_SPL_BUILD
++obj-y += spl.o
++else
++obj-$(CONFIG_T600) += t600.o
++obj-$(CONFIG_T600) += eth_t600.o
++obj-$(CONFIG_T600) += cpld.o
++obj-$(CONFIG_CDEC_CPLD) += cdec_cpld.o 
++obj-$(CONFIG_PCI)      += pci.o
++endif
++
++obj-y   += ddr.o
++obj-y   += law.o
++obj-y   += tlb.o
+diff --git a/board/freescale/t600/cdec_cpld.c b/board/freescale/t600/cdec_cpld.c
+new file mode 100644
+index 0000000..6ae66d3
+--- /dev/null
++++ b/board/freescale/t600/cdec_cpld.c
+@@ -0,0 +1,191 @@
++/************************************************************************/ 
++/** 
++ * @file cdec_cpld.c
++ * @brief This is a program group that specializes 
++ * @brief in P2041 FJ individual board. 
++ * @author FJT)Konno
++ * $Date:: 2016-10-28 18:54:31 +0900#$$
++ * 
++ * SPDX-License-Identifier: GPL-2.0+
++ * This program is free software: you can redistribute it and/or modify
++ * it un under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ * 
++ * COPYRIGHT(C) FUJITSU LIMITED 2015
++ */
++/************************************************************************/ 
++
++#include <common.h>
++#include <asm/io.h>
++#include <version.h>
++#include "cdec_cpld.h"
++
++
++#define CDEC_CPLD_DEBUG
++
++#ifdef CDEC_CPLD_DEBUG
++#define    debug_printf(x) printf x
++#else
++#define    debug_printf(x)
++#endif
++
++
++/***********************************************************************/ 
++/** 
++ * 
++ * @brief  fpga_config_main
++ * @brief 
++ * @brief 
++ * 
++ * @param unsigned int  
++ * @param unsigned int  
++ * @param unsigned int  
++ * 
++ * @brief RETUN Type int
++ * @retval 
++ * @retval 
++ * 
++ * @attention --
++ * 
++ * --------------------------------------------------------------------- 
++ * 
++ * SPDX-License-Identifier: GPL-2.0+
++ * This program is free software: you can redistribute it and/or modify
++ * it un under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ * 
++ * COPYRIGHT(C) FUJITSU LIMITED 2015
++ */
++/***********************************************************************/ 
++int fpga_config_main(unsigned int fpga, unsigned int mode,unsigned int size)
++{
++	unsigned int read_reg=0;
++	unsigned short *conf_start_adr=0;
++	unsigned int conf_data=0;
++	unsigned int count = size/2;
++	unsigned int i;
++	/* debug_cpld = 1; */
++	
++	/* FPGA#1 is configed */
++	if(1 == fpga) {
++		
++		/* Config Mode setting */
++		FPGA_CNF_SET(fpga) = mode;
++		debug_printf(("FPGA_CNF_SET(fpga) = mode;\n"));
++		debug_printf((" FPGA_CNF_SET(%p) = %08lx \n",&FPGA_CNF_SET(fpga),FPGA_CNF_SET(fpga))); //debug
++		debug_printf((" FPGA_CNF_MON(%p) = %08lx \n",&FPGA_CNF_MON(fpga),FPGA_CNF_MON(fpga))); //debug
++
++		
++		/* Config startUp setting */
++		FPGA_CNF_START(fpga) = 0x00000001;
++		debug_printf(("FPGA_CNF_START(fpga) = 0x00000001;\n"));
++		debug_printf((" FPGA_CNF_START(%p) = %08lx \n",&FPGA_CNF_START(fpga),FPGA_CNF_START(fpga))); //debug
++		debug_printf((" FPGA_CNF_MON(%p) = %08lx \n",&FPGA_CNF_MON(fpga),FPGA_CNF_MON(fpga))); //debug
++
++		udelay(WAIT_30MS);	/* wait 30msec */
++		
++		/* Configuration Access Chack */
++		read_reg = FPGA_CNF_ST(fpga);
++		debug_printf(("read_reg = FPGA_CNF_ST(fpga);\n"));
++		debug_printf((" FPGA_CNF_ST(%p) = %08x \n",&FPGA_CNF_ST(fpga),read_reg)); //debug
++		debug_printf((" FPGA_CNF_MON(%p) = %08lx \n",&FPGA_CNF_MON(fpga),FPGA_CNF_MON(fpga))); //debug
++		
++		/* Chack CNF_START_ERR */
++		if(read_reg & 0x1) {
++			/* Configuration Start Error. */
++			/* FULT */
++			SEVERITY_LED = 0x00000001;
++#if 0
++			CPLD_WRITE(severity_led,0x00000001);
++			cpld_debug("W %08x <== %08x\n",(unsigned int)((offsetof(cpld_data_t, severity_led) + CPLD_BASE)),0x00000001);
++#endif
++			
++			return RET_FAULT;
++			
++		} else {
++			/* No error */
++			conf_start_adr = (unsigned short *)FPGA_CONFIG_RAM_START_ADR;
++			
++			conf_data = (unsigned int)*conf_start_adr;
++			
++			for(i=0;i <count; i++){
++				/* FPGA Config */
++				FPGA_CNF_DATA(fpga) = conf_data;
++#if 0
++				if(i<100){
++					cpld_debug("W %08x <== %08x From 0x%08x \n",(unsigned int)(GET_CPLD_AD(fpga1_cnf_data)),(unsigned int)conf_data,(unsigned int)conf_start_adr);
++				}
++#endif
++				conf_start_adr++;
++				conf_data = (unsigned int)*conf_start_adr;
++			}
++//			cpld_debug("LAST ADDRES 0x%08x LAST DATA 0x%08x \n",(unsigned int)conf_start_adr,(unsigned int)conf_data);
++			
++			/* Configuration end Process */
++			FPGA_CNF_END(fpga) = 0x00000001;
++			debug_printf(("FPGA_CNF_END(fpga) = 0x00000001;\n"));
++			debug_printf((" FPGA_CNF_END(%p) = %08lx \n",&FPGA_CNF_END(fpga),FPGA_CNF_END(fpga))); //debug
++			debug_printf((" FPGA_CNF_MON(%p) = %08lx \n",&FPGA_CNF_MON(fpga),FPGA_CNF_MON(fpga))); //debug
++			
++			udelay(WAIT_30MS);	/* wait 30msec */
++			
++			/* FPGA Config Status Read */
++			read_reg = FPGA_CNF_ST(fpga);
++			debug_printf(("read_reg = FPGA_CNF_ST(fpga);\n"));
++			debug_printf((" FPGA_CNF_ST(%p) = %08x \n",&FPGA_CNF_ST(fpga),read_reg)); //debug
++			debug_printf((" FPGA_CNF_MON(%p) = %08lx \n",&FPGA_CNF_MON(fpga),FPGA_CNF_MON(fpga))); //debug
++			
++			if(read_reg & 0x4) {
++				/* Configuration Initialization Error */
++				
++				/* FULT */
++				SEVERITY_LED = 0x00000001;
++#if 0
++				CPLD_WRITE(severity_led,0x00000001);
++				cpld_debug("W %08x <== %08x\n",(unsigned int)((offsetof(cpld_data_t, severity_led) + CPLD_BASE)),0x00000001);
++#endif
++				
++				return RET_FAULT;
++			}
++			
++			if(read_reg & 0xA) {
++				/* Configuration Done Error. */
++				/* Configuration Data Error.. */
++				
++				return RET_RERY;
++			}
++		}
++		
++	}
++	
++	/* TODO: move following setting to init_cdec_cpld() */
++
++	/* PIU Power Enable */
++	PIU_PWR_CTRL = 0x0;
++
++	/* Wait 1000ms */
++	msleep(1000);
++
++	/* PIU Reset Release */
++	PIU_RESET = 0x0;
++
++	/* MBCNT Reset Release */
++	MBCNT_RESET = 0x0;
++
++	/* Clock Down Alarm Mask */
++	CLK_DWN_EQP_MSK = 0x20;
++
++	/* WDT Alarm Mask */
++	WDT_ALM_STATUS = 0x0;
++
++	/* TX_DIS Alarm Mask */
++	TX_DIS = 0x100;
++
++	/* Clear Clock Down Alarm */
++	read_reg = CLK_DWN_EQP;
++
++	/* Clear WDT Alarm */
++	read_reg = WDT_ALM_MSK;
++
++	return RET_SUCCESS;
++}
+diff --git a/board/freescale/t600/cdec_cpld.h b/board/freescale/t600/cdec_cpld.h
+new file mode 100644
+index 0000000..606b4d8
+--- /dev/null
++++ b/board/freescale/t600/cdec_cpld.h
+@@ -0,0 +1,28 @@
++
++#define FPGA_CONFIG_RAM_START_ADR	0x1000000
++#define WAIT_30MS							30000
++#define RET_SUCCESS						0
++#define RET_RERY							-1
++#define RET_FAULT							-2
++#define RET_ERROR							-3
++
++#define CDEC_CPLD_BASE               0xc0000000
++#define CDEC_CPLD_FPGA_CNF_BASE      (CDEC_CPLD_BASE + 0xD00000)
++
++#define FPGA_CNF_SET(i)			(*(volatile unsigned long int *)(CDEC_CPLD_FPGA_CNF_BASE + 0x1000*(i-1) + 0x00))
++#define FPGA_CNF_START(i)		(*(volatile unsigned long int *)(CDEC_CPLD_FPGA_CNF_BASE + 0x1000*(i-1) + 0x10))
++#define FPGA_CNF_END(i)			(*(volatile unsigned long int *)(CDEC_CPLD_FPGA_CNF_BASE + 0x1000*(i-1) + 0x14))
++#define FPGA_CNF_ST(i)			(*(volatile unsigned long int *)(CDEC_CPLD_FPGA_CNF_BASE + 0x1000*(i-1) + 0x18))
++#define FPGA_CNF_MON(i)			(*(volatile unsigned long int *)(CDEC_CPLD_FPGA_CNF_BASE + 0x1000*(i-1) + 0x1C))
++#define FPGA_CNF_DATA(i)		(*(volatile unsigned long int *)(CDEC_CPLD_FPGA_CNF_BASE + 0x1000*(i-1) + 0x30))
++#define CLK_DWN_EQP				(*(volatile unsigned long int *)(CDEC_CPLD_BASE + 0x000060))
++#define CLK_DWN_EQP_MSK			(*(volatile unsigned long int *)(CDEC_CPLD_BASE + 0x00006c))
++#define WDT_ALM_MSK				(*(volatile unsigned long int *)(CDEC_CPLD_BASE + 0x000090))
++#define WDT_ALM_STATUS			(*(volatile unsigned long int *)(CDEC_CPLD_BASE + 0x00009c))
++#define SEVERITY_LED				(*(volatile unsigned long int *)(CDEC_CPLD_BASE + 0x000304))
++#define MBCNT_RESET				(*(volatile unsigned long int *)(CDEC_CPLD_BASE + 0xa00034))
++#define PIU_RESET					(*(volatile unsigned long int *)(CDEC_CPLD_BASE + 0xa00038))
++#define PIU_PWR_CTRL				(*(volatile unsigned long int *)(CDEC_CPLD_BASE + 0xa00400))
++#define TX_DIS						(*(volatile unsigned long int *)(CDEC_CPLD_BASE + 0x1900004))
++
++#define msleep(a)    udelay(a * 1000)
+diff --git a/board/freescale/t600/cpld.c b/board/freescale/t600/cpld.c
+new file mode 100644
+index 0000000..4aa126b
+--- /dev/null
++++ b/board/freescale/t600/cpld.c
+@@ -0,0 +1,71 @@
++/*
++ * Copyright 2014 Freescale Semiconductor
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ *
++ * Freescale T2080RDB board-specific CPLD controlling supports.
++ */
++
++#include <common.h>
++#include <command.h>
++#include "cpld.h"
++
++u8 cpld_read(unsigned int reg)
++{
++	void *p = (void *)CONFIG_SYS_CPLD_BASE;
++
++	return in_8(p + reg);
++}
++
++void cpld_write(unsigned int reg, u8 value)
++{
++	void *p = (void *)CONFIG_SYS_CPLD_BASE;
++
++	out_8(p + reg, value);
++}
++
++/* Set the boot bank to the alternate bank */
++void cpld_set_altbank(void)
++{
++	u8 reg = CPLD_READ(flash_csr);
++
++	reg = (reg & ~CPLD_BANK_SEL_MASK) | CPLD_LBMAP_ALTBANK;
++	CPLD_WRITE(flash_csr, reg);
++	CPLD_WRITE(reset_ctl, CPLD_LBMAP_RESET);
++}
++
++/* Set the boot bank to the default bank */
++void cpld_set_defbank(void)
++{
++	u8 reg = CPLD_READ(flash_csr);
++
++	reg = (reg & ~CPLD_BANK_SEL_MASK) | CPLD_LBMAP_DFLTBANK;
++	CPLD_WRITE(flash_csr, reg);
++	CPLD_WRITE(reset_ctl, CPLD_LBMAP_RESET);
++}
++
++int do_cpld(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
++{
++	int rc = 0;
++
++	if (argc <= 1)
++		return cmd_usage(cmdtp);
++
++	if (strcmp(argv[1], "reset") == 0) {
++		if (strcmp(argv[2], "altbank") == 0)
++			cpld_set_altbank();
++		else
++			cpld_set_defbank();
++	} else {
++		rc = cmd_usage(cmdtp);
++	}
++
++	return rc;
++}
++
++U_BOOT_CMD(
++	cpld, CONFIG_SYS_MAXARGS, 1, do_cpld,
++	"Reset the board or alternate bank",
++	"reset: reset to default bank\n"
++	"cpld reset altbank: reset to alternate bank\n"
++);
+diff --git a/board/freescale/t600/cpld.h b/board/freescale/t600/cpld.h
+new file mode 100644
+index 0000000..3f15338
+--- /dev/null
++++ b/board/freescale/t600/cpld.h
+@@ -0,0 +1,42 @@
++/*
++ * Copyright 2014 Freescale Semiconductor
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++/*
++ * CPLD register set of T2080RDB board-specific.
++ */
++struct cpld_data {
++	u8 chip_id1;		/* 0x00 - Chip ID1 register */
++	u8 chip_id2;		/* 0x01 - Chip ID2 register */
++	u8 hw_ver;		/* 0x02 - Hardware Revision Register */
++	u8 sw_ver;		/* 0x03 - Software Revision register */
++	u8 res0[12];		/* 0x04 - 0x0F - not used */
++	u8 reset_ctl;		/* 0x10 - Reset control Register */
++	u8 flash_csr;		/* 0x11 - Flash control and status register */
++	u8 thermal_csr;		/* 0x12 - Thermal control and status register */
++	u8 led_csr;		/* 0x13 - LED control and status register */
++	u8 sfp_csr;		/* 0x14 - SFP+ control and status register */
++	u8 misc_csr;		/* 0x15 - Misc control and status register */
++	u8 boot_or;		/* 0x16 - Boot config override register */
++	u8 boot_cfg1;		/* 0x17 - Boot configuration register 1 */
++	u8 boot_cfg2;		/* 0x18 - Boot configuration register 2 */
++} cpld_data_t;
++
++u8 cpld_read(unsigned int reg);
++void cpld_write(unsigned int reg, u8 value);
++
++#define CPLD_READ(reg) cpld_read(offsetof(struct cpld_data, reg))
++#define CPLD_WRITE(reg, value)  \
++	cpld_write(offsetof(struct cpld_data, reg), value)
++
++/* CPLD on IFC */
++#define CPLD_LBMAP_MASK		0x3F
++#define CPLD_BANK_SEL_MASK	0x07
++#define CPLD_BANK_OVERRIDE	0x40
++#define CPLD_LBMAP_ALTBANK	0x44 /* BANK OR | BANK 4 */
++#define CPLD_LBMAP_DFLTBANK	0x40 /* BANK OR | BANK 0 */
++#define CPLD_LBMAP_RESET	0xFF
++#define CPLD_LBMAP_SHIFT	0x03
++#define CPLD_BOOT_SEL		0x80
+diff --git a/board/freescale/t600/ddr.c b/board/freescale/t600/ddr.c
+new file mode 100644
+index 0000000..8a26276
+--- /dev/null
++++ b/board/freescale/t600/ddr.c
+@@ -0,0 +1,114 @@
++/*
++ * Copyright 2014 Freescale Semiconductor, Inc.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * Version 2 or later as published by the Free Software Foundation.
++ */
++
++#include <common.h>
++#include <i2c.h>
++#include <hwconfig.h>
++#include <asm/mmu.h>
++#include <fsl_ddr_sdram.h>
++#include <fsl_ddr_dimm_params.h>
++#include <asm/fsl_law.h>
++#include "ddr.h"
++
++DECLARE_GLOBAL_DATA_PTR;
++
++void fsl_ddr_board_options(memctl_options_t *popts,
++				dimm_params_t *pdimm,
++				unsigned int ctrl_num)
++{
++	const struct board_specific_parameters *pbsp, *pbsp_highest = NULL;
++	ulong ddr_freq;
++
++	if (ctrl_num > 1) {
++		printf("Not supported controller number %d\n", ctrl_num);
++		return;
++	}
++	if (!pdimm->n_ranks)
++		return;
++
++	pbsp = udimms[0];
++
++	/* Get clk_adjust, wrlvl_start, wrlvl_ctl, according to the board ddr
++	 * freqency and n_banks specified in board_specific_parameters table.
++	 */
++	ddr_freq = get_ddr_freq(0) / 1000000;
++	while (pbsp->datarate_mhz_high) {
++		if (pbsp->n_ranks == pdimm->n_ranks &&
++		    (pdimm->rank_density >> 30) >= pbsp->rank_gb) {
++			if (ddr_freq <= pbsp->datarate_mhz_high) {
++				popts->clk_adjust = pbsp->clk_adjust;
++				popts->wrlvl_start = pbsp->wrlvl_start;
++				popts->wrlvl_ctl_2 = pbsp->wrlvl_ctl_2;
++				popts->wrlvl_ctl_3 = pbsp->wrlvl_ctl_3;
++				goto found;
++			}
++			pbsp_highest = pbsp;
++		}
++		pbsp++;
++	}
++
++	if (pbsp_highest) {
++		printf("Error: board specific timing not found");
++		printf("for data rate %lu MT/s\n", ddr_freq);
++		printf("Trying to use the highest speed (%u) parameters\n",
++		       pbsp_highest->datarate_mhz_high);
++		popts->clk_adjust = pbsp_highest->clk_adjust;
++		popts->wrlvl_start = pbsp_highest->wrlvl_start;
++		popts->wrlvl_ctl_2 = pbsp->wrlvl_ctl_2;
++		popts->wrlvl_ctl_3 = pbsp->wrlvl_ctl_3;
++	} else {
++		panic("DIMM is not supported by this board");
++	}
++found:
++	debug("Found timing match: n_ranks %d, data rate %d, rank_gb %d\n"
++		"\tclk_adjust %d, wrlvl_start %d, wrlvl_ctrl_2 0x%x, "
++		"wrlvl_ctrl_3 0x%x\n",
++		pbsp->n_ranks, pbsp->datarate_mhz_high, pbsp->rank_gb,
++		pbsp->clk_adjust, pbsp->wrlvl_start, pbsp->wrlvl_ctl_2,
++		pbsp->wrlvl_ctl_3);
++
++	/*
++	 * Factors to consider for half-strength driver enable:
++	 *	- number of DIMMs installed
++	 */
++	popts->half_strength_driver_enable = 0;
++	/*
++	 * Write leveling override
++	 */
++	popts->wrlvl_override = 1;
++	popts->wrlvl_sample = 0xf;
++
++	/*
++	 * Rtt and Rtt_WR override
++	 */
++	popts->rtt_override = 0;
++
++	/* Enable ZQ calibration */
++	popts->zq_en = 1;
++
++	/* DHC_EN =1, ODT = 75 Ohm */
++	popts->ddr_cdr1 = DDR_CDR1_DHC_EN | DDR_CDR1_ODT(DDR_CDR_ODT_75ohm);
++	popts->ddr_cdr2 = DDR_CDR2_ODT(DDR_CDR_ODT_75ohm);
++}
++
++phys_size_t initdram(int board_type)
++{
++	phys_size_t dram_size;
++
++#if defined(CONFIG_SPL_BUILD) || !defined(CONFIG_RAMBOOT_PBL)
++	puts("Initializing....using SPD\n");
++	dram_size = fsl_ddr_sdram();
++
++	dram_size = setup_ddr_tlbs(dram_size / 0x100000);
++	dram_size *= 0x100000;
++#else
++	/* DDR has been initialised by first stage boot loader */
++	dram_size = fsl_ddr_sdram_size();
++#endif
++	return dram_size;
++}
+diff --git a/board/freescale/t600/ddr.h b/board/freescale/t600/ddr.h
+new file mode 100644
+index 0000000..b6d4062
+--- /dev/null
++++ b/board/freescale/t600/ddr.h
+@@ -0,0 +1,47 @@
++/*
++ * Copyright 2014 Freescale Semiconductor, Inc.
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++
++#ifndef __DDR_H__
++#define __DDR_H__
++struct board_specific_parameters {
++	u32 n_ranks;
++	u32 datarate_mhz_high;
++	u32 rank_gb;
++	u32 clk_adjust;
++	u32 wrlvl_start;
++	u32 wrlvl_ctl_2;
++	u32 wrlvl_ctl_3;
++};
++
++/*
++ * These tables contain all valid speeds we want to override with board
++ * specific parameters. datarate_mhz_high values need to be in ascending order
++ * for each n_ranks group.
++ */
++
++static const struct board_specific_parameters udimm0[] = {
++	/*
++	 * memory controller 0
++	 *   num|  hi| rank|  clk| wrlvl |   wrlvl   |  wrlvl |
++	 * ranks| mhz| GB  |adjst| start |   ctl2    |  ctl3  |
++	 */
++	{2,  1200, 2, 5,     7, 0x0808090a, 0x0b0c0c0a},
++	{2,  1500, 2, 5,     6, 0x07070809, 0x0a0b0b09},
++	{2,  1600, 2, 5,     8, 0x0808070b, 0x0c0d0e0a},
++	{2,  1700, 2, 4,     7, 0x080a0a0c, 0x0c0d0e0a},
++	{2,  1900, 2, 5,     9, 0x0a0b0c0e, 0x0f10120c},
++	{1,  1200, 2, 5,     7, 0x0808090a, 0x0b0c0c0a},
++	{1,  1500, 2, 5,     6, 0x07070809, 0x0a0b0b09},
++	{1,  1600, 2, 5,     8, 0x0808070b, 0x0c0d0e0a},
++	{1,  1700, 2, 4,     7, 0x080a0a0c, 0x0c0d0e0a},
++	{1,  1900, 2, 5,     9, 0x0a0b0c0e, 0x0f10120c},
++	{}
++};
++
++static const struct board_specific_parameters *udimms[] = {
++	udimm0,
++};
++#endif
+diff --git a/board/freescale/t600/eth_t600.c b/board/freescale/t600/eth_t600.c
+new file mode 100644
+index 0000000..83c6422
+--- /dev/null
++++ b/board/freescale/t600/eth_t600.c
+@@ -0,0 +1,106 @@
++/*
++ * Copyright 2014 Freescale Semiconductor, Inc.
++ *
++ * Shengzhou Liu <Shengzhou.Liu@freescale.com>
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++
++#include <common.h>
++#include <command.h>
++#include <netdev.h>
++#include <asm/mmu.h>
++#include <asm/processor.h>
++#include <asm/immap_85xx.h>
++#include <asm/fsl_law.h>
++#include <asm/fsl_serdes.h>
++#include <asm/fsl_portals.h>
++#include <asm/fsl_liodn.h>
++#include <malloc.h>
++#include <fm_eth.h>
++#include <fsl_mdio.h>
++#include <miiphy.h>
++#include <phy.h>
++#include <asm/fsl_dtsec.h>
++#include <asm/fsl_serdes.h>
++
++int board_eth_init(bd_t *bis)
++{
++#if defined(CONFIG_FMAN_ENET)
++	int i, interface;
++	struct memac_mdio_info dtsec_mdio_info;
++	struct memac_mdio_info tgec_mdio_info;
++	struct mii_dev *dev;
++	ccsr_gur_t *gur = (void *)(CONFIG_SYS_MPC85xx_GUTS_ADDR);
++	u32 srds_s1;
++
++	srds_s1 = in_be32(&gur->rcwsr[4]) &
++					FSL_CORENET2_RCWSR4_SRDS1_PRTCL;
++	srds_s1 >>= FSL_CORENET2_RCWSR4_SRDS1_PRTCL_SHIFT;
++
++	dtsec_mdio_info.regs =
++		(struct memac_mdio_controller *)CONFIG_SYS_FM1_DTSEC_MDIO_ADDR;
++
++	dtsec_mdio_info.name = DEFAULT_FM_MDIO_NAME;
++
++	/* Register the 1G MDIO bus */
++	fm_memac_mdio_init(bis, &dtsec_mdio_info);
++
++	tgec_mdio_info.regs =
++		(struct memac_mdio_controller *)CONFIG_SYS_FM1_TGEC_MDIO_ADDR;
++	tgec_mdio_info.name = DEFAULT_FM_TGEC_MDIO_NAME;
++
++	/* Register the 10G MDIO bus */
++	fm_memac_mdio_init(bis, &tgec_mdio_info);
++
++	/* Set the two on-board RGMII PHY address */
++	fm_info_set_phy_address(FM1_DTSEC3, RGMII_PHY1_ADDR);
++	fm_info_set_phy_address(FM1_DTSEC4, RGMII_PHY2_ADDR);
++
++	switch (srds_s1) {
++	case 0x66:
++	case 0x6b:
++		fm_info_set_phy_address(FM1_10GEC1, CORTINA_PHY_ADDR1);
++		fm_info_set_phy_address(FM1_10GEC2, CORTINA_PHY_ADDR2);
++		fm_info_set_phy_address(FM1_10GEC3, FM1_10GEC3_PHY_ADDR);
++		fm_info_set_phy_address(FM1_10GEC4, FM1_10GEC4_PHY_ADDR);
++		break;
++	default:
++		printf("SerDes1 protocol 0x%x is not supported on T600\n",
++		       srds_s1);
++		break;
++	}
++
++	for (i = FM1_DTSEC1; i < FM1_DTSEC1 + CONFIG_SYS_NUM_FM1_DTSEC; i++) {
++		interface = fm_info_get_enet_if(i);
++		switch (interface) {
++		case PHY_INTERFACE_MODE_RGMII:
++			dev = miiphy_get_dev_by_name(DEFAULT_FM_MDIO_NAME);
++			fm_info_set_mdio(i, dev);
++			break;
++		default:
++			break;
++		}
++	}
++
++	for (i = FM1_10GEC1; i < FM1_10GEC1 + CONFIG_SYS_NUM_FM1_10GEC; i++) {
++		switch (fm_info_get_enet_if(i)) {
++		case PHY_INTERFACE_MODE_XGMII:
++			dev = miiphy_get_dev_by_name(DEFAULT_FM_TGEC_MDIO_NAME);
++			fm_info_set_mdio(i, dev);
++			break;
++		default:
++			break;
++		}
++	}
++
++	cpu_eth_init(bis);
++#endif /* CONFIG_FMAN_ENET */
++
++	return pci_eth_init(bis);
++}
++
++void fdt_fixup_board_enet(void *fdt)
++{
++	return;
++}
+diff --git a/board/freescale/t600/law.c b/board/freescale/t600/law.c
+new file mode 100644
+index 0000000..eb82431
+--- /dev/null
++++ b/board/freescale/t600/law.c
+@@ -0,0 +1,34 @@
++/*
++ * Copyright 2008-2014 Freescale Semiconductor, Inc.
++ *
++ * (C) Copyright 2000
++ * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/fsl_law.h>
++#include <asm/mmu.h>
++
++struct law_entry law_table[] = {
++	SET_LAW(CONFIG_SYS_FLASH_BASE_PHYS, LAW_SIZE_256M, LAW_TRGT_IF_IFC),
++#ifdef CONFIG_SYS_BMAN_MEM_PHYS
++	SET_LAW(CONFIG_SYS_BMAN_MEM_PHYS, LAW_SIZE_32M, LAW_TRGT_IF_BMAN),
++#endif
++#ifdef CONFIG_SYS_QMAN_MEM_PHYS
++	SET_LAW(CONFIG_SYS_QMAN_MEM_PHYS, LAW_SIZE_32M, LAW_TRGT_IF_QMAN),
++#endif
++#ifdef CONFIG_SYS_CPLD_BASE_PHYS
++	SET_LAW(CONFIG_SYS_CPLD_BASE_PHYS, LAW_SIZE_4K, LAW_TRGT_IF_IFC),
++#endif
++#ifdef CONFIG_SYS_DCSRBAR_PHYS
++	/* Limit DCSR to 32M to access NPC Trace Buffer */
++	SET_LAW(CONFIG_SYS_DCSRBAR_PHYS, LAW_SIZE_32M, LAW_TRGT_IF_DCSR),
++#endif
++#ifdef CONFIG_SYS_NAND_BASE_PHYS
++	SET_LAW(CONFIG_SYS_NAND_BASE_PHYS, LAW_SIZE_1M, LAW_TRGT_IF_IFC),
++#endif
++};
++
++int num_law_entries = ARRAY_SIZE(law_table);
+diff --git a/board/freescale/t600/pci.c b/board/freescale/t600/pci.c
+new file mode 100644
+index 0000000..ba7041a
+--- /dev/null
++++ b/board/freescale/t600/pci.c
+@@ -0,0 +1,23 @@
++/*
++ * Copyright 2007-2014 Freescale Semiconductor, Inc.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <command.h>
++#include <pci.h>
++#include <asm/fsl_pci.h>
++#include <libfdt.h>
++#include <fdt_support.h>
++#include <asm/fsl_serdes.h>
++
++void pci_init_board(void)
++{
++	fsl_pcie_init_board(0);
++}
++
++void pci_of_setup(void *blob, bd_t *bd)
++{
++	FT_FSL_PCI_SETUP;
++}
+diff --git a/board/freescale/t600/spl.c b/board/freescale/t600/spl.c
+new file mode 100644
+index 0000000..9ae2b1e
+--- /dev/null
++++ b/board/freescale/t600/spl.c
+@@ -0,0 +1,107 @@
++/* Copyright 2013 Freescale Semiconductor, Inc.
++ *
++ * SPDX-License-Identifier:    GPL-2.0+
++ */
++
++#include <common.h>
++#include <malloc.h>
++#include <ns16550.h>
++#include <nand.h>
++#include <i2c.h>
++#include <mmc.h>
++#include <fsl_esdhc.h>
++#include <spi_flash.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++phys_size_t get_effective_memsize(void)
++{
++	return CONFIG_SYS_L3_SIZE;
++}
++
++unsigned long get_board_sys_clk(void)
++{
++	return CONFIG_SYS_CLK_FREQ;
++}
++
++unsigned long get_board_ddr_clk(void)
++{
++	return CONFIG_DDR_CLK_FREQ;
++}
++
++void board_init_f(ulong bootflag)
++{
++	u32 plat_ratio, sys_clk, ccb_clk;
++	ccsr_gur_t *gur = (void *)CONFIG_SYS_MPC85xx_GUTS_ADDR;
++
++	/* Memcpy existing GD at CONFIG_SPL_GD_ADDR */
++	memcpy((void *)CONFIG_SPL_GD_ADDR, (void *)gd, sizeof(gd_t));
++
++	/* Update GD pointer */
++	gd = (gd_t *)(CONFIG_SPL_GD_ADDR);
++
++	console_init_f();
++
++	/* initialize selected port with appropriate baud rate */
++	sys_clk = get_board_sys_clk();
++	plat_ratio = (in_be32(&gur->rcwsr[0]) >> 25) & 0x1f;
++	ccb_clk = sys_clk * plat_ratio / 2;
++
++	NS16550_init((NS16550_t)CONFIG_SYS_NS16550_COM1,
++		     ccb_clk / 16 / CONFIG_BAUDRATE);
++
++#if defined(CONFIG_SPL_MMC_BOOT)
++	puts("\nSD boot...\n");
++#elif defined(CONFIG_SPL_SPI_BOOT)
++	puts("\nSPI boot...\n");
++#elif defined(CONFIG_SPL_NAND_BOOT)
++	puts("\nNAND boot...\n");
++#endif
++
++	relocate_code(CONFIG_SPL_RELOC_STACK, (gd_t *)CONFIG_SPL_GD_ADDR, 0x0);
++}
++
++void board_init_r(gd_t *gd, ulong dest_addr)
++{
++	bd_t *bd;
++
++	bd = (bd_t *)(gd + sizeof(gd_t));
++	memset(bd, 0, sizeof(bd_t));
++	gd->bd = bd;
++	bd->bi_memstart = CONFIG_SYS_INIT_L3_ADDR;
++	bd->bi_memsize = CONFIG_SYS_L3_SIZE;
++
++	probecpu();
++	get_clocks();
++	mem_malloc_init(CONFIG_SPL_RELOC_MALLOC_ADDR,
++			CONFIG_SPL_RELOC_MALLOC_SIZE);
++
++#ifdef CONFIG_SPL_NAND_BOOT
++	nand_spl_load_image(CONFIG_ENV_OFFSET, CONFIG_ENV_SIZE,
++			    (uchar *)CONFIG_ENV_ADDR);
++#endif
++#ifdef CONFIG_SPL_MMC_BOOT
++	mmc_initialize(bd);
++	mmc_spl_load_image(CONFIG_ENV_OFFSET, CONFIG_ENV_SIZE,
++			   (uchar *)CONFIG_ENV_ADDR);
++#endif
++#ifdef CONFIG_SPL_SPI_BOOT
++	spi_spl_load_image(CONFIG_ENV_OFFSET, CONFIG_ENV_SIZE,
++			   (uchar *)CONFIG_ENV_ADDR);
++#endif
++
++	gd->env_addr  = (ulong)(CONFIG_ENV_ADDR);
++	gd->env_valid = 1;
++
++	i2c_init_all();
++
++	gd->ram_size = initdram(0);
++
++#ifdef CONFIG_SPL_MMC_BOOT
++	mmc_boot();
++#elif defined(CONFIG_SPL_SPI_BOOT)
++	spi_boot();
++#elif defined(CONFIG_SPL_NAND_BOOT)
++	nand_boot();
++#endif
++}
+diff --git a/board/freescale/t600/t600.c b/board/freescale/t600/t600.c
+new file mode 100644
+index 0000000..3d77081
+--- /dev/null
++++ b/board/freescale/t600/t600.c
+@@ -0,0 +1,474 @@
++/*
++ * Copyright 2009-2013 Freescale Semiconductor, Inc.
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++
++#include <common.h>
++#include <command.h>
++#include <i2c.h>
++#include <netdev.h>
++#include <linux/compiler.h>
++#include <asm/mmu.h>
++#include <asm/processor.h>
++#include <asm/immap_85xx.h>
++#include <asm/fsl_law.h>
++#include <asm/fsl_serdes.h>
++#include <asm/fsl_portals.h>
++#include <asm/fsl_liodn.h>
++#include <fm_eth.h>
++#include "t600.h"
++#include "cpld.h"
++#ifdef CONFIG_CDEC_CPLD
++#include "cdec_cpld.h"
++#endif
++
++DECLARE_GLOBAL_DATA_PTR;
++
++int checkboard(void)
++{
++	struct cpu_type *cpu = gd->arch.cpu;
++	static const char *freq[3] = {"100.00MHZ", "125.00MHz", "156.25MHZ"};
++
++	printf("Board: T600, ");
++	printf("Board rev: 0x%02x CPLD ver: 0x%02x, boot from ",
++	       CPLD_READ(hw_ver), CPLD_READ(sw_ver));
++
++#ifdef CONFIG_SDCARD
++	puts("SD/MMC\n");
++#elif CONFIG_SPIFLASH
++	puts("SPI\n");
++#else
++	u8 reg;
++
++	reg = CPLD_READ(flash_csr);
++
++	if (reg & CPLD_BOOT_SEL) {
++		puts("NAND\n");
++	} else {
++		reg = ((reg & CPLD_LBMAP_MASK) >> CPLD_LBMAP_SHIFT);
++		printf("NOR vBank%d\n", reg);
++	}
++#endif
++
++	puts("SERDES Reference Clocks:\n");
++	printf("SD1_CLK1=%s, SD1_CLK2=%s\n", freq[2], freq[0]);
++	printf("SD2_CLK1=%s, SD2_CLK2=%s\n", freq[0], freq[0]);
++
++	return 0;
++}
++
++#ifdef CONFIG_CDEC_CPLD
++static int bord_fpga_config_sub_v2(const char *filename, unsigned int fpga_config_index, unsigned int fpga_config_mode, int fstype, unsigned int fpga_n)
++{
++	unsigned int fpga_config_size=0;
++	unsigned int temp=0;
++	unsigned long addr = FPGA_CONFIG_RAM_START_ADR;
++	char szBuffer[256];
++	char* dirname = szBuffer;
++#if 0
++	loff_t bytes = 0;
++	loff_t pos = 0;
++	loff_t len_read;
++#else
++	int bytes = 0;
++	int pos = 0;
++	int len_read;
++#endif
++	int ret;
++#if 0
++	unsigned int bank = 0;
++	unsigned int act_bank = 0;
++
++	/* Kernel Start Bank infomation                 */
++	/* bank  = 0 SATA side0 kernel(Defunt)          */
++	/*         1 SATA side1 kernel                  */
++	/*         2 In boot flash'kernel(Debug)        */
++	/*         3 Network (Debug)                    */
++	/*         4 USB (Degug)                        */
++	bank = getenv_ulong("bank", 16, 0x0);
++	
++	switch(bank) {
++	case 0:								/* SATA 0面起動 */
++		/* Open SATA 0:1 device */
++		if (fs_set_blk_dev("sata","0:1", fstype)){
++			puts("Error Access SATA 0:1 \n");
++			return RET_ERROR;
++		}
++		break;
++	case 1:								/* SATA 1面起動 */
++		/* Open SATA 0:2 device */
++		if (fs_set_blk_dev("sata","0:2", fstype)){
++			puts("Error Access SATA 0:2 \n");
++			return RET_ERROR;
++		}
++		break;
++	default:
++	/*case 2:*/								/* BootFlash 起動 */
++	/*case 3:*/								/* Network 起動   */
++	/*case 4:*/								/* USB    起動    */
++		/* FPGA Config Partition bank env get */
++		/* act_bank = 0 use partition 0 (defult) */
++		/*            1 use partition 1 (defult) */
++		if ( -1 == getenv_yesno("act_bank")) {
++			fpconf_debug("# Nothing act_bank env \n");
++			setenv("act_bank", "0");
++		}
++		
++		act_bank = getenv_ulong("act_bank", 16, 0x0);
++		
++		
++		if (1 == act_bank) {
++			/* Open SATA 0:2 device */
++			if (fs_set_blk_dev("sata","0:2", fstype)){
++				puts("Error Access SATA 0:2 \n");
++				return RET_ERROR;
++			}
++		} else {
++			/* Open SATA 0:1 device */
++			if (fs_set_blk_dev("sata","0:1", fstype)){
++				puts("Error Access SATA 0:1 \n");
++				return RET_ERROR;
++			}
++		}
++		
++		break;
++	}
++	
++	
++	if (1 == fpga_n) {
++		/* FPGA Config File dirctory env get                */
++		strcpy (dirname, getenv("fpgacnfdir"));
++	}
++	
++	if (2 == fpga_n) {
++		/* FPGA Config File dirctory env get                */
++		strcpy (dirname, getenv("fpgacnfdir2"));
++	}
++#endif
++
++	if (fs_set_blk_dev("sata","1", fstype)){
++		puts("Error Access SATA 1 \n");
++		return RET_ERROR;
++	}
++
++	strcpy(dirname, "T600/");
++	strcat(dirname, filename);
++
++	/* FPGA Config File(FP01.bin) Read From SATA 0 to RAM 20000000 */
++	len_read = fs_read(dirname, addr, pos, bytes);
++
++	if (len_read <= 0) {
++#if 0
++		if((0==bank) ||(1==bank)) {
++			printf("Error Read File(%s) From SATA 0:%01d \n",dirname,bank+1);
++		} else {
++			printf("Error Read File(%s) From SATA 0:%01d \n",dirname,act_bank+1);
++		}
++#else
++		printf("Error Read File(%s) From SATA 1\n",dirname);
++#endif
++		return RET_RERY;
++	}
++
++	/* Chack size */
++	temp = (len_read%2);
++	fpga_config_size = (temp + len_read);
++
++	/* WATCHDOG RESET */	
++//	CPLD_WATCHDOG_RESET();	
++
++	ret=fpga_config_main(fpga_config_index, fpga_config_mode, fpga_config_size);
++
++//	fpconf_debug("# FPGA CPLD Configuration Infomation is %x\n",ret);
++
++	/* memset((void*)FPGA_CONFIG_RAM_START_ADR, 0, fpga_config_size); */
++
++	return ret;
++}
++
++static int bord_fpga_config_sata(unsigned int fpga_n,unsigned int config_side)
++{
++	/* FPGA Config From SATA */
++	unsigned int fpga_config_cwkad=0;
++	
++	unsigned int fpga_config_mode=0;
++	unsigned int rtn=0;
++	int fstype;
++	
++	char fnameBuffer[10];
++	char* fname = fnameBuffer;
++	
++	
++	
++//	fstype = 2;	/* 2 is FS_TYPE_EXT */
++	fstype = 1; /* 1 is FS_TYPE_FAT */
++	
++	/* FPGA Config CPLD WA env get                    */
++	/* fpcfcpld_wkad1 = 0 Not use work around(defult) */
++	/*                  1 use work aroud              */
++//	fpga_config_cwkad = getenv_ulong("fpcfcpld_wkad1", 16, 0x0);
++	strcpy (fname, "fp01.bin");
++
++#if 0	
++	if (1 == fpga_n) {
++		/* FPGA Config Type Fucntion env get                */
++		/* fpcnfmd =  0 Xixlinx/Altera uncompress mode FPGA */
++		/*            1 Altera compress mode FPGA           */
++		fpga_config_mode = getenv_ulong("fpcnfmd", 16, 0x0);
++		
++		if(0 == config_side) {
++			strcpy (fname, "fp01.bin");
++		} else {
++			strcpy (fname, "fp11.bin");
++		}
++		
++		fpconf_debug("# The file name is %s\n",fname);
++	}
++
++	if (2 == fpga_n) {
++		/* FPGA Config Type Fucntion env get                */
++		/* fpcnfmd2 = 0 Xixlinx/Altera uncompress mode FPGA */
++		/*            1 Altera compress mode FPGA           */
++		fpga_config_mode = getenv_ulong("fpcnfmd2", 16, 0x0);
++		
++		if(0 == config_side) {
++			strcpy (fname, "fp02.bin");
++		} else {
++			strcpy (fname, "fp12.bin");
++		}
++		
++		fpconf_debug("# The file name is %s\n",fname);
++	}
++#endif
++	
++	rtn = bord_fpga_config_sub_v2(fname, fpga_n, fpga_config_mode, fstype, fpga_n);
++
++#if 0	
++	if (fpga_config_cwkad) {
++		rtn = bord_fpga_config_sub_v2(fname, fpga_n, fpga_config_mode, fstype, fpga_n); /* workaround */
++	}
++#endif
++	
++	switch(rtn) {
++	case RET_ERROR:
++		printf("Error FPGA#%01d Configuration...Side%01d \n",fpga_n,config_side);
++#if 0
++		CPLD_WRITE(severity_led,0x00000001);	
++		setenv("fpgmode", "0");
++		CPLD_NVS_WRITE(fpga_conf_skip_state,0); 
++		CPLD_NVS_WRITE(fpga_conf_error,1); 
++		CPLD_NVS_WRITE(fpga_conf_side_state,0); 
++		init_fpga_conf_fail_cnt();
++#endif
++		break;
++	case RET_SUCCESS:
++		printf("FPGA#%01d Configured...Side%01d \n",fpga_n,config_side);
++#if 0
++		if(0 == config_side) {
++			setenv("fpgmode", "1");
++			CPLD_NVS_WRITE(fpga_conf_side_state,1); 
++		} else {
++			setenv("fpgmode", "2");
++			CPLD_NVS_WRITE(fpga_conf_side_state,2); 
++		}
++		CPLD_NVS_WRITE(fpga_conf_skip_state,0); 
++		CPLD_NVS_WRITE(fpga_conf_error,0);
++#endif
++		break;
++	case RET_RERY:
++
++//		if (1 == config_side) {
++			printf("Error FPGA#%01d Configuration...Side%01d \n",fpga_n,config_side);
++#if 0
++			CPLD_WRITE(severity_led,0x00000001);	
++			setenv("fpgmode", "0");
++			CPLD_NVS_WRITE(fpga_conf_skip_state,0); 
++			CPLD_NVS_WRITE(fpga_conf_error,1); 
++			CPLD_NVS_WRITE(fpga_conf_side_state,0); 
++			init_fpga_conf_fail_cnt();
++#endif		
++			rtn = RET_ERROR;
++//		}
++		break;
++	default:
++		break;
++	}
++	
++	
++	return (rtn);
++	
++	
++}
++
++void bord_fpga_config(void)
++{
++	volatile unsigned int i=0;
++//	volatile unsigned int start_chk_bit=0;
++//	int func_val=0;
++	int fp_config_typ=0;
++	int func_val_sata=0;
++	unsigned int config_side=0;
++	
++	//stanley add
++	sata_initialize();
++#if 0	
++	/* Chack FPGA Config SKIP ,When CPU Reset */
++	func_val = bord_fpga_config_reset_skip_jadge();
++	if(1 == func_val){
++		return ;
++	}
++	
++	/* Chack FPGA Config SKIP ,When User Operationt */
++	func_val = bord_fpga_config_user_skip_jadge();
++	if(1 == func_val){
++		return ;
++	}
++#endif
++	
++	/* bit0 = 0 : FPGA1 Config Dissable           */
++	/*        1 : FPGA1 Config Enable             */
++	/* bit1 = 0 : FPGA2 Config Dissable           */
++	/*        1 : FPGA2 Config Enable             */
++#if 0
++	if ( -1 == getenv_yesno("fpgcnfbit")) {
++		fpconf_debug("# Please define  fpgcnfbit  env \n");
++	}
++	
++	fpga_config_cntrl = getenv_ulong("fpgcnfbit", 16, 0x0);
++#endif
++	
++	/* FPGA#n Config Chack */
++//	start_chk_bit = 0x00000001;
++
++	/* Chack FPGA Config Control bit */
++//	for (i=0; i<MAX_FPGA_NUM;i++){
++		
++//		fpconf_debug("# i=%01d start_chk_bit=%08x\n",i,start_chk_bit);
++		
++//		if(fpga_config_cntrl & start_chk_bit){
++			/* if bit on FPGA Config start */
++			
++			/* First Cahack FPGA Config Skip */
++//			if(0 == bord_fpga_config_skip_jadge(i+1)) {
++				
++				/* Call FPGA Config program */
++#if 0
++				printf("Start FPGA#%01d Config...\n",i+1);
++				fp_config_typ=0;
++				fp_config_typ = bord_fpga_config_get_config_typ(i+1);
++				
++				if (fp_config_typ<0) {
++					printf("%s[%d] %s: Func Error FPGA#%01d \n",__FILE__,__LINE__,__FUNCTION__,i+1);
++					fp_config_typ = 0;
++				}
++				
++				if (1 == fp_config_typ) {
++					/* FPGA Config From Boot-Flash */
++					
++					bord_fpga_config_flash(i+1);
++					
++				} else {
++#endif
++					/* FPGA Config From SATA */
++					
++//					func_val_sata = bord_fpga_config_sata(i+1,config_side);
++					func_val_sata = bord_fpga_config_sata(1,config_side);
++					
++#if 0	
++					if(RET_ERROR == func_val_sata) break;
++					if((1 != config_side) && (func_val_sata == RET_RERY)) {
++						puts("Retry FPGA Configuration... \n");
++						config_side=1;
++						i=-1;						/* FPGA#1から continue を強制的に実行させる */
++						start_chk_bit = 0x00000001;
++						continue;
++						
++					}
++#endif
++					
++//				}
++//			}
++#if 0	
++		} else {
++			/* if bit off FPGA Config Process */
++			fpconf_debug("# Dissable FPGA#%01d ...\n",i+1);
++		}
++#endif
++		
++//		start_chk_bit = (start_chk_bit<<(i+1));
++	
++//	}
++	puts("\n");
++	puts("\n");
++	
++}
++#endif
++
++int board_early_init_r(void)
++{
++	const unsigned int flashbase = CONFIG_SYS_FLASH_BASE;
++	const u8 flash_esel = find_tlb_idx((void *)flashbase, 1);
++	/*
++	 * Remap Boot flash + PROMJET region to caching-inhibited
++	 * so that flash can be erased properly.
++	 */
++
++	/* Flush d-cache and invalidate i-cache of any FLASH data */
++	flush_dcache();
++	invalidate_icache();
++
++	/* invalidate existing TLB entry for flash + promjet */
++	disable_tlb(flash_esel);
++
++	set_tlb(1, flashbase, CONFIG_SYS_FLASH_BASE_PHYS,
++		MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		0, flash_esel, BOOKE_PAGESZ_256M, 1);
++
++	set_liodns();
++#ifdef CONFIG_SYS_DPAA_QBMAN
++	setup_portals();
++#endif
++
++	return 0;
++}
++
++unsigned long get_board_sys_clk(void)
++{
++	return CONFIG_SYS_CLK_FREQ;
++}
++
++unsigned long get_board_ddr_clk(void)
++{
++	return CONFIG_DDR_CLK_FREQ;
++}
++
++int misc_init_r(void)
++{
++	return 0;
++}
++
++void ft_board_setup(void *blob, bd_t *bd)
++{
++	phys_addr_t base;
++	phys_size_t size;
++
++	ft_cpu_setup(blob, bd);
++
++	base = getenv_bootm_low();
++	size = getenv_bootm_size();
++
++	fdt_fixup_memory(blob, (u64)base, (u64)size);
++
++#ifdef CONFIG_PCI
++	pci_of_setup(blob, bd);
++#endif
++
++	fdt_fixup_liodn(blob);
++	fdt_fixup_dr_usb(blob, bd);
++
++#ifdef CONFIG_SYS_DPAA_FMAN
++	fdt_fixup_fman_ethernet(blob);
++	fdt_fixup_board_enet(blob);
++#endif
++}
+diff --git a/board/freescale/t600/t600.h b/board/freescale/t600/t600.h
+new file mode 100644
+index 0000000..13380d0
+--- /dev/null
++++ b/board/freescale/t600/t600.h
+@@ -0,0 +1,13 @@
++/*
++ * Copyright 2014 Freescale Semiconductor, Inc.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __CORENET_DS_H__
++#define __CORENET_DS_H__
++
++void fdt_fixup_board_enet(void *blob);
++void pci_of_setup(void *blob, bd_t *bd);
++
++#endif
+diff --git a/board/freescale/t600/t600_pbi.cfg b/board/freescale/t600/t600_pbi.cfg
+new file mode 100644
+index 0000000..e200d92
+--- /dev/null
++++ b/board/freescale/t600/t600_pbi.cfg
+@@ -0,0 +1,41 @@
++#
++# Copyright 2013 Freescale Semiconductor, Inc.
++#
++# SPDX-License-Identifier:      GPL-2.0+
++#
++# Refer doc/README.pblimage for more details about how-to configure
++# and create PBL boot image
++#
++
++#PBI commands
++#Initialize CPC1
++09010000 00200400
++09138000 00000000
++091380c0 00000100
++#512KB SRAM
++09010100 00000000
++09010104 fff80009
++09010f00 08000000
++#enable CPC1
++09010000 80000000
++#Configure LAW for CPC1
++09000d00 00000000
++09000d04 fff80000
++09000d08 81000012
++#Initialize eSPI controller, default configuration is slow for eSPI to
++#load data, this configuration comes from u-boot eSPI driver.
++09110000 80000403
++09110020 2d170008
++09110024 00100008
++09110028 00100008
++0911002c 00100008
++#Errata for slowing down the MDC clock to make it <= 2.5 MHZ
++094fc030 00008148
++094fd030 00008148
++#Configure alternate space
++09000010 00000000
++09000014 ff000000
++09000018 81000000
++#Flush PBL data
++09138000 00000000
++091380c0 00000000
+diff --git a/board/freescale/t600/t600_rcw.cfg b/board/freescale/t600/t600_rcw.cfg
+new file mode 100644
+index 0000000..59025ea
+--- /dev/null
++++ b/board/freescale/t600/t600_rcw.cfg
+@@ -0,0 +1,16 @@
++#PBL preamble and RCW header
++aa55aa55 010e0100
++
++#For T2080 v1.0
++#SerDes=0x66_0x16, Core=1533MHz, DDR=1600MT/s
++#120c0017 15000000 00000000 00000000
++#66150002 00008400 ec104000 c1000000
++#00000000 00000000 00000000 000307fc
++#00000000 00000000 00000000 00000004
++
++#For T2080 v1.1
++#SerDes=0x66_0x15, Core:1800MHz, DDR:1600MT/s
++1206001b 15000000 00000000 00000000
++66150002 00000000 e8104000 c1000000
++00800000 00000000 00000000 000307fc
++00000000 00000000 00000000 00000004
+diff --git a/board/freescale/t600/tlb.c b/board/freescale/t600/tlb.c
+new file mode 100644
+index 0000000..af61791
+--- /dev/null
++++ b/board/freescale/t600/tlb.c
+@@ -0,0 +1,153 @@
++/*
++ * Copyright 2008-2014 Freescale Semiconductor, Inc.
++ *
++ * (C) Copyright 2000
++ * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/mmu.h>
++
++struct fsl_e_tlb_entry tlb_table[] = {
++	/* TLB 0 - for temp stack in cache */
++	SET_TLB_ENTRY(0, CONFIG_SYS_INIT_RAM_ADDR,
++		      CONFIG_SYS_INIT_RAM_ADDR_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, 0,
++		      0, 0, BOOKE_PAGESZ_4K, 0),
++	SET_TLB_ENTRY(0, CONFIG_SYS_INIT_RAM_ADDR + 4 * 1024,
++		      CONFIG_SYS_INIT_RAM_ADDR_PHYS + 4 * 1024,
++		      MAS3_SX|MAS3_SW|MAS3_SR, 0,
++		      0, 0, BOOKE_PAGESZ_4K, 0),
++	SET_TLB_ENTRY(0, CONFIG_SYS_INIT_RAM_ADDR + 8 * 1024,
++		      CONFIG_SYS_INIT_RAM_ADDR_PHYS + 8 * 1024,
++		      MAS3_SX|MAS3_SW|MAS3_SR, 0,
++		      0, 0, BOOKE_PAGESZ_4K, 0),
++	SET_TLB_ENTRY(0, CONFIG_SYS_INIT_RAM_ADDR + 12 * 1024,
++		      CONFIG_SYS_INIT_RAM_ADDR_PHYS + 12 * 1024,
++		      MAS3_SX|MAS3_SW|MAS3_SR, 0,
++		      0, 0, BOOKE_PAGESZ_4K, 0),
++
++	/* TLB 1 */
++	/* *I*** - Covers boot page */
++#if defined(CONFIG_SYS_RAMBOOT) && defined(CONFIG_SYS_INIT_L3_ADDR)
++	/*
++	 * *I*G - L3SRAM. When L3 is used as 1M SRAM, the address of the
++	 * SRAM is at 0xfff00000, it covered the 0xfffff000.
++	 */
++	SET_TLB_ENTRY(1, CONFIG_SYS_INIT_L3_ADDR, CONFIG_SYS_INIT_L3_ADDR,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 0, BOOKE_PAGESZ_1M, 1),
++#elif defined(CONFIG_SRIO_PCIE_BOOT_SLAVE)
++	/*
++	 * SRIO_PCIE_BOOT-SLAVE. When slave boot, the address of the
++	 * space is at 0xfff00000, it covered the 0xfffff000.
++	 */
++	SET_TLB_ENTRY(1, CONFIG_SYS_SRIO_PCIE_BOOT_SLAVE_ADDR,
++		      CONFIG_SYS_SRIO_PCIE_BOOT_SLAVE_ADDR_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_W|MAS2_G,
++		      0, 0, BOOKE_PAGESZ_1M, 1),
++#else
++	SET_TLB_ENTRY(1, 0xfffff000, 0xfffff000,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 0, BOOKE_PAGESZ_4K, 1),
++#endif
++
++	/* *I*G* - CCSRBAR */
++	SET_TLB_ENTRY(1, CONFIG_SYS_CCSRBAR, CONFIG_SYS_CCSRBAR_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 1, BOOKE_PAGESZ_16M, 1),
++
++	/* *I*G* - Flash, localbus */
++	/* This will be changed to *I*G* after relocation to RAM. */
++	SET_TLB_ENTRY(1, CONFIG_SYS_FLASH_BASE, CONFIG_SYS_FLASH_BASE_PHYS,
++		      MAS3_SX|MAS3_SR, MAS2_W|MAS2_G,
++		      0, 2, BOOKE_PAGESZ_16M, 1), /* stanley_liu: change flash size to 16MB */
++
++#ifndef CONFIG_SPL_BUILD
++	/* *I*G* - PCIe 1, 0x80000000 */
++	SET_TLB_ENTRY(1, CONFIG_SYS_PCIE1_MEM_VIRT, CONFIG_SYS_PCIE1_MEM_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 3, BOOKE_PAGESZ_512M, 1),
++
++	/* *I*G* - PCIe 2, 0xa0000000 */
++	SET_TLB_ENTRY(1, CONFIG_SYS_PCIE2_MEM_VIRT, CONFIG_SYS_PCIE2_MEM_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 4, BOOKE_PAGESZ_256M, 1),
++
++	/* *I*G* - PCIe 3, 0xb0000000 */
++	SET_TLB_ENTRY(1, CONFIG_SYS_PCIE3_MEM_VIRT, CONFIG_SYS_PCIE3_MEM_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 5, BOOKE_PAGESZ_256M, 1),
++
++
++	/* *I*G* - PCIe 4, 0xc0000000 */
++	SET_TLB_ENTRY(1, CONFIG_SYS_PCIE4_MEM_VIRT, CONFIG_SYS_PCIE4_MEM_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 6, BOOKE_PAGESZ_256M, 1),
++
++	/* *I*G* - PCI I/O */
++	SET_TLB_ENTRY(1, CONFIG_SYS_PCIE1_IO_VIRT, CONFIG_SYS_PCIE1_IO_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 7, BOOKE_PAGESZ_256K, 1),
++
++	/* Bman/Qman */
++#ifdef CONFIG_SYS_BMAN_MEM_PHYS
++	SET_TLB_ENTRY(1, CONFIG_SYS_BMAN_MEM_BASE, CONFIG_SYS_BMAN_MEM_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, 0,
++		      0, 9, BOOKE_PAGESZ_16M, 1),
++	SET_TLB_ENTRY(1, CONFIG_SYS_BMAN_MEM_BASE + 0x01000000,
++		      CONFIG_SYS_BMAN_MEM_PHYS + 0x01000000,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 10, BOOKE_PAGESZ_16M, 1),
++#endif
++#ifdef CONFIG_SYS_QMAN_MEM_PHYS
++	SET_TLB_ENTRY(1, CONFIG_SYS_QMAN_MEM_BASE, CONFIG_SYS_QMAN_MEM_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, 0,
++		      0, 11, BOOKE_PAGESZ_16M, 1),
++	SET_TLB_ENTRY(1, CONFIG_SYS_QMAN_MEM_BASE + 0x01000000,
++		      CONFIG_SYS_QMAN_MEM_PHYS + 0x01000000,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 12, BOOKE_PAGESZ_16M, 1),
++#endif
++#endif
++#ifdef CONFIG_SYS_DCSRBAR_PHYS
++	SET_TLB_ENTRY(1, CONFIG_SYS_DCSRBAR, CONFIG_SYS_DCSRBAR_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 13, BOOKE_PAGESZ_32M, 1),
++#endif
++#ifdef CONFIG_SYS_NAND_BASE
++	/*
++	 * *I*G - NAND
++	 * entry 14 and 15 has been used hard coded, they will be disabled
++	 * in cpu_init_f, so we use entry 16 for nand.
++	 */
++	SET_TLB_ENTRY(1, CONFIG_SYS_NAND_BASE, CONFIG_SYS_NAND_BASE_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 16, BOOKE_PAGESZ_64K, 1),
++#endif
++#ifdef CONFIG_SYS_CPLD_BASE
++	SET_TLB_ENTRY(1, CONFIG_SYS_CPLD_BASE, CONFIG_SYS_CPLD_BASE_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_I|MAS2_G,
++		      0, 17, BOOKE_PAGESZ_4K, 1),
++#endif
++#ifdef CONFIG_SRIO_PCIE_BOOT_SLAVE
++	/*
++	 * SRIO_PCIE_BOOT-SLAVE. 1M space from 0xffe00000 for
++	 * fetching ucode and ENV from master
++	 */
++	SET_TLB_ENTRY(1, CONFIG_SYS_SRIO_PCIE_BOOT_UCODE_ENV_ADDR,
++		      CONFIG_SYS_SRIO_PCIE_BOOT_UCODE_ENV_ADDR_PHYS,
++		      MAS3_SX|MAS3_SW|MAS3_SR, MAS2_G,
++		      0, 18, BOOKE_PAGESZ_1M, 1),
++#endif
++#if defined(CONFIG_RAMBOOT_PBL) && !defined(CONFIG_SPL_BUILD)
++	SET_TLB_ENTRY(1, CONFIG_SYS_DDR_SDRAM_BASE, CONFIG_SYS_DDR_SDRAM_BASE,
++		      MAS3_SX|MAS3_SW|MAS3_SR, 0,
++		      0, 19, BOOKE_PAGESZ_2G, 1)
++#endif
++
++};
++
++int num_tlb_entries = ARRAY_SIZE(tlb_table);
+diff --git a/boards.cfg b/boards.cfg
+index 117d2a2..65d7f3d 100644
+--- a/boards.cfg
++++ b/boards.cfg
+@@ -971,6 +971,7 @@ Active  powerpc     mpc85xx        -           freescale       t208xqds
+ Active  powerpc     mpc85xx        -           freescale       t208xqds            T2081QDS_SDCARD                       T208xQDS:PPC_T2081,RAMBOOT_PBL,SPL_FSL_PBL,SDCARD                                                                                 -
+ Active  powerpc     mpc85xx        -           freescale       t208xqds            T2081QDS_SPIFLASH                     T208xQDS:PPC_T2081,RAMBOOT_PBL,SPL_FSL_PBL,SPIFLASH                                                                               -
+ Active  powerpc     mpc85xx        -           freescale       t208xqds            T2081QDS_SRIO_PCIE_BOOT               T208xQDS:PPC_T2081,SRIO_PCIE_BOOT_SLAVE,SYS_TEXT_BASE=0xFFF40000                                                                  -
++Active  powerpc     mpc85xx        -           freescale       t600                T600                                  T600:PPC_T2080                                                                                                                    -
+ Active  powerpc     mpc85xx        -           freescale       t208xrdb            T2080RDB                              T208xRDB:PPC_T2080                                                                                                                -
+ Active  powerpc     mpc85xx        -           freescale       t208xrdb            T2080RDB_NAND                         T208xRDB:PPC_T2080,RAMBOOT_PBL,SPL_FSL_PBL,NAND                                                                                   -
+ Active  powerpc     mpc85xx        -           freescale       t208xrdb            T2080RDB_SDCARD                       T208xRDB:PPC_T2080,RAMBOOT_PBL,SPL_FSL_PBL,SDCARD                                                                                 -
+diff --git a/common/board_r.c b/common/board_r.c
+index 602a239..3852b83 100644
+--- a/common/board_r.c
++++ b/common/board_r.c
+@@ -704,6 +704,15 @@ static int initr_kbd(void)
+ }
+ #endif
+ 
++#ifdef CONFIG_CDEC_CPLD
++static int fpga_config(void)
++{
++	bord_fpga_config();
++
++	return 0;
++}
++#endif
++
+ static int run_main_loop(void)
+ {
+ #ifdef CONFIG_SANDBOX
+@@ -918,6 +927,9 @@ init_fnc_t init_sequence_r[] = {
+ #ifdef CONFIG_PS2KBD
+ 	initr_kbd,
+ #endif
++#ifdef CONFIG_CDEC_CPLD
++	fpga_config,
++#endif
+ 	run_main_loop,
+ };
+ 
+-- 
+1.7.9.5
+

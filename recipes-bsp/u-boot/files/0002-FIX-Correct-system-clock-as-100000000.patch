@@ -1,0 +1,25 @@
+From 8a1dd4c2e14c8d9a07ae3ed5517aa882478cc2c7 Mon Sep 17 00:00:00 2001
+From: StanleyLiu <stanley_liu@accton.com>
+Date: Thu, 14 Jun 2018 10:59:00 +0800
+Subject: [PATCH 02/13] [FIX] Correct system clock as 100000000
+
+---
+ include/configs/T208xRDB.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/configs/T208xRDB.h b/include/configs/T208xRDB.h
+index 8e22ccb..0ee4db6 100644
+--- a/include/configs/T208xRDB.h
++++ b/include/configs/T208xRDB.h
+@@ -185,7 +185,7 @@ unsigned long get_board_sys_clk(void);
+ unsigned long get_board_ddr_clk(void);
+ #endif
+ 
+-#define CONFIG_SYS_CLK_FREQ	66660000
++#define CONFIG_SYS_CLK_FREQ	100000000 /* stanley_liu correct system clock setting */
+ #define CONFIG_DDR_CLK_FREQ	133330000
+ 
+ /*
+-- 
+1.7.9.5
+

@@ -1,0 +1,65 @@
+From 15fd7732ff708def15eeb78ad8878334fddeebf2 Mon Sep 17 00:00:00 2001
+From: StanleyLiu <stanley_liu@accton.com>
+Date: Thu, 14 Jun 2018 11:04:40 +0800
+Subject: [PATCH 03/13] Correct I2C bus/address for access DDR SPD
+
+---
+ drivers/ddr/fsl/main.c     |   13 +++++++++++++
+ include/configs/T208xRDB.h |    6 +++---
+ 2 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/ddr/fsl/main.c b/drivers/ddr/fsl/main.c
+index 5e001fc..d4478eb 100644
+--- a/drivers/ddr/fsl/main.c
++++ b/drivers/ddr/fsl/main.c
+@@ -90,9 +90,18 @@ static void __get_spd(generic_spd_eeprom_t *spd, u8 i2c_address)
+ #ifdef CONFIG_SYS_FSL_DDR4
+ 	uint8_t dummy = 0;
+ #endif
++	uint8_t ch;
+ 
+ 	i2c_set_bus_num(CONFIG_SYS_SPD_BUS_NUM);
+ 
++	/* stanley_liu: open I2C MUX CH2/CH3 */
++	ch = 0xc;
++	ret = i2c_write(0x72, 0, 1, &ch, 1);
++	if (ret) {
++		printf("PCA: failed to select proper channel\n");
++	}
++	printf("__get_spd: try to read spd from address 0x%x\n", i2c_address);
++
+ #ifdef CONFIG_SYS_FSL_DDR4
+ 	/*
+ 	 * DDR4 SPD has 384 to 512 bytes
+@@ -129,6 +138,10 @@ static void __get_spd(generic_spd_eeprom_t *spd, u8 i2c_address)
+ 		}
+ 		memset(spd, 0, sizeof(generic_spd_eeprom_t));
+ 	}
++
++	/* stanley_liu: close I2C MUX*/
++	ch = 0;
++	ret = i2c_write(0x72, 0, 1, &ch, 1);
+ }
+ 
+ __attribute__((weak, alias("__get_spd")))
+diff --git a/include/configs/T208xRDB.h b/include/configs/T208xRDB.h
+index 0ee4db6..927b0e9 100644
+--- a/include/configs/T208xRDB.h
++++ b/include/configs/T208xRDB.h
+@@ -223,10 +223,10 @@ unsigned long get_board_ddr_clk(void);
+ #define CONFIG_DDR_SPD
+ #define CONFIG_SYS_FSL_DDR3
+ #undef CONFIG_FSL_DDR_INTERACTIVE
+-#define CONFIG_SYS_SPD_BUS_NUM	0
++#define CONFIG_SYS_SPD_BUS_NUM	1	/* stanley_liu: change from bus0 to bus1 */
+ #define CONFIG_SYS_SDRAM_SIZE	2048	/* for fixed parameter use */
+-#define SPD_EEPROM_ADDRESS1	0x51
+-#define SPD_EEPROM_ADDRESS2	0x52
++#define SPD_EEPROM_ADDRESS1	0x52	/* stanley_liu: for chip select 0/1 */
++#define SPD_EEPROM_ADDRESS2	0x53	/* stanley_liu: for chip select 2/3 */
+ #define SPD_EEPROM_ADDRESS	SPD_EEPROM_ADDRESS1
+ #define CTRL_INTLV_PREFERED	cacheline
+ 
+-- 
+1.7.9.5
+

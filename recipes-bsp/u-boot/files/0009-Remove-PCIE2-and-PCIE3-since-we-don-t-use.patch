@@ -1,0 +1,28 @@
+From 2cd8f2c1c94d694294a2d42deb9d97c8717103eb Mon Sep 17 00:00:00 2001
+From: StanleyLiu <stanley_liu@accton.com>
+Date: Thu, 21 Jun 2018 10:51:20 +0800
+Subject: [PATCH 09/13] Remove PCIE2 and PCIE3 since we don't use
+
+---
+ include/configs/T208xRDB.h |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/T208xRDB.h b/include/configs/T208xRDB.h
+index 927b0e9..4e419f8 100644
+--- a/include/configs/T208xRDB.h
++++ b/include/configs/T208xRDB.h
+@@ -506,8 +506,9 @@ unsigned long get_board_ddr_clk(void);
+  */
+ #define CONFIG_PCI		/* Enable PCI/PCIE */
+ #define CONFIG_PCIE1		/* PCIE controler 1 */
+-#define CONFIG_PCIE2		/* PCIE controler 2 */
+-#define CONFIG_PCIE3		/* PCIE controler 3 */
++/* stanley_liu: disable PCIE2 PCIE3 */
++/*#define CONFIG_PCIE2 */		/* PCIE controler 2 */
++/*#define CONFIG_PCIE3 */		/* PCIE controler 3 */
+ #define CONFIG_PCIE4		/* PCIE controler 4 */
+ #define CONFIG_FSL_PCI_INIT	/* Use common FSL init code */
+ #define CONFIG_SYS_PCI_64BIT	/* enable 64-bit PCI resources */
+-- 
+1.7.9.5
+

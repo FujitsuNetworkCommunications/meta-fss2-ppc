@@ -1,0 +1,24 @@
+From 4f8bab4e0e1518a3315675e3cc64d754a6d757b4 Mon Sep 17 00:00:00 2001
+From: StanleyLiu <stanley_liu@accton.com>
+Date: Thu, 21 Jun 2018 11:37:07 +0800
+Subject: [PATCH 2/2] update for fixing incorrect I2C bus setting
+
+---
+ t2080rdb/t2080rdb/PBL_T600.img |  Bin 80 -> 80 bytes
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+ mode change 100644 => 100755 t2080rdb/t2080rdb/PBL_T600.img
+
+diff --git a/t2080rdb/t2080rdb/PBL_T600.img b/t2080rdb/t2080rdb/PBL_T600.img
+old mode 100644
+new mode 100755
+index 8961667f48df0e96b051725daa40eb28b83adb30..262ba575146536e376f8efb7d48bdf975bd27da0
+GIT binary patch
+delta 25
+ccmWFtm|!C!z`(%E00FEV!VL~TZ!Bg505U8D_y7O^
+
+delta 25
+ccmWFtm|!C!#K6GI00FEV!VM0~w%;uR05OFHEC2ui
+
+-- 
+1.7.9.5
+
