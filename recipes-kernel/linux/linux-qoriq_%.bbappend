@@ -22,6 +22,7 @@ SRC_URI += "file://${MACHINE}/dts                     \
             file://${MACHINE}/kconfig                 \
             file://patches/0001-Backport-PPC64-patch-to-linux-3.12.patch \
             file://patches/0002-Chage-to-fit-T600-NOR-flash-partition.patch \
+            file://patches/0003-add-accton-kernel-driver.patch \
                   "
 
 # Example to add T600 patches/uboot env
