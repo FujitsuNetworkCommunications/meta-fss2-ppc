@@ -19,9 +19,9 @@ SRC_URI_append += "file://${MACHINE}/dts                     \
 KERNEL_DEFCONFIG  = "../kconfig/${MACHINE}_config"
 
 # Device tree is todo at this point, picked an existing one to get kernel to compile
-# KERNEL_DEVICETREE = "${MACHINE}.dtb"
+KERNEL_DEVICETREE = "${MACHINE}.dtb"
 # KERNEL_DEVICETREE = "t4240emu.dtb"
-KERNEL_DEVICETREE = "t2080rdb.dtb t2080rdb-usdpaa.dtb"
+#KERNEL_DEVICETREE = "t2080rdb.dtb t2080rdb-usdpaa.dtb"
 
 # Example syntax to add device tree
 # KERNEL_DEVICETREE_t600 = "${MACHINE}.dtb ${MACHINE}-f100.dtb"

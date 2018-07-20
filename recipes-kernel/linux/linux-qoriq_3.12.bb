@@ -20,6 +20,10 @@ KERNEL_CC_append = " ${TOOLCHAIN_OPTIONS}"
 KERNEL_LD_append = " ${TOOLCHAIN_OPTIONS}"
 
 do_configure_prepend() {
+        # copy desired dts files
+        cp ${WORKDIR}/dts/${MACHINE}.dts ${B}/arch/${ARCH}/boot/dts/
+        cp ${WORKDIR}/dts/${MACHINE}.dtsi ${B}/arch/${ARCH}/boot/dts/
+
 	# copy desired defconfig so we pick it up for the real kernel_do_configure
 	cp ${KERNEL_DEFCONFIG} ${B}/.config
     
