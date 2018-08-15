@@ -20,10 +20,6 @@ python () {
 FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
 SRC_URI += "file://${MACHINE}/dts                     \
             file://${MACHINE}/kconfig                 \
-            file://patches/0001-Backport-PPC64-patch-to-linux-3.12.patch \
-            file://patches/0002-Chage-to-fit-T600-NOR-flash-partition.patch \
-            file://patches/0003-add-accton-kernel-driver.patch \
-            file://patches/0004-update-cpld-fan-and-mdec-driver-base-on-the-new-spec.patch \
                   "
 
 # Example to add T600 patches/uboot env
@@ -34,6 +30,13 @@ SRC_URI += "file://${MACHINE}/dts                     \
 #                         file://${MACHINE}/uboot_scripts/uboot_env_9l14.txt       \
 #                         file://${MACHINE}/patches/0001-disableForcedSpeedReduction.patch \
 #                    "
+
+SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-linux-3.12.patch     \
+                        file://${MACHINE}/patches/0002-Chage-to-fit-T600-NOR-flash-partition.patch  \
+                        file://${MACHINE}/patches/0003-add-accton-kernel-driver.patch               \
+                        file://${MACHINE}/patches/0004-update-cpld-fan-and-mdec-driver-base-on-the-new-spec.patch  \
+                        file://${MACHINE}/patches/0005-add-brcm-tag-in-TX-remove-brcm-tag-in-RX.patch              \
+                       "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
 
