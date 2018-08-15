@@ -35,6 +35,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0002-Chage-to-fit-T600-NOR-flash-partition.patch  \
                         file://${MACHINE}/patches/0003-add-accton-kernel-driver.patch               \
                         file://${MACHINE}/patches/0004-update-cpld-fan-and-mdec-driver-base-on-the-new-spec.patch  \
+                        file://${MACHINE}/patches/0005-add-brcm-tag-in-TX-remove-brcm-tag-in-RX.patch              \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
