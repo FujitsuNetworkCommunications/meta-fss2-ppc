@@ -42,6 +42,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0009-Fix-port1-always-turn-off-issue.-We-make-mistake-whe.patch  \
                         file://${MACHINE}/patches/0010-support-ps_shutdown.patch                                   \
                         file://${MACHINE}/patches/0011-decrease-Dpaa-MTU-add-BRCM-tag-and-FCS-need-use-1.patch     \
+                        file://${MACHINE}/patches/0012-modify-non-linear-sk_buff-append-bytes-in-Head.patch        \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
