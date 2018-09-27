@@ -1,0 +1,287 @@
+From 1df7eea4ce27402b832e8b4a3fde56504826fcc2 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Thu, 27 Sep 2018 20:08:47 +0800
+Subject: [PATCH] add marvell phy driver for controlling the phy inside the
+ copper-SFP
+
+---
+ drivers/net/phy/Kconfig       |   5 +
+ drivers/net/phy/Makefile      |   1 +
+ drivers/net/phy/marvell_i2c.c | 237 ++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 243 insertions(+)
+ create mode 100644 drivers/net/phy/marvell_i2c.c
+
+diff --git a/drivers/net/phy/Kconfig b/drivers/net/phy/Kconfig
+index 559ca1c..aff9964 100644
+--- a/drivers/net/phy/Kconfig
++++ b/drivers/net/phy/Kconfig
+@@ -34,6 +34,11 @@ config MARVELL_PHY
+ 	---help---
+ 	  Currently has a driver for the 88E1011S
+ 	
++config MARVELL_I2C_PHY
++	tristate "Drivers for Marvell PHY 88E1111 by i2c"
++	---help---
++	  Currently has a driver for the 88E1111
++	
+ config DAVICOM_PHY
+ 	tristate "Drivers for Davicom PHYs"
+ 	---help---
+diff --git a/drivers/net/phy/Makefile b/drivers/net/phy/Makefile
+index 6342943..d5be047 100644
+--- a/drivers/net/phy/Makefile
++++ b/drivers/net/phy/Makefile
+@@ -5,6 +5,7 @@ libphy-objs			:= phy.o phy_device.o mdio_bus.o
+ obj-$(CONFIG_PHYLIB)		+= libphy.o
+ obj-$(CONFIG_ATHEROS_PHY)	+= atheros.o
+ obj-$(CONFIG_MARVELL_PHY)	+= marvell.o
++obj-$(CONFIG_MARVELL_I2C_PHY)	+= marvell_i2c.o
+ obj-$(CONFIG_DAVICOM_PHY)	+= davicom.o
+ obj-$(CONFIG_CICADA_PHY)	+= cicada.o
+ obj-$(CONFIG_LXT_PHY)		+= lxt.o
+diff --git a/drivers/net/phy/marvell_i2c.c b/drivers/net/phy/marvell_i2c.c
+new file mode 100644
+index 0000000..a8fb9d7
+--- /dev/null
++++ b/drivers/net/phy/marvell_i2c.c
+@@ -0,0 +1,237 @@
++/*
++ * SFP driver for marvell phy i2c
++ *
++ * Copyright (C)  Roy Chuang <roy_chuang@edge-core.com>
++ *
++ * Copyright (C)  Edge-core Corporation, 2018
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++ */
++
++#include <linux/module.h>
++#include <linux/jiffies.h>
++#include <linux/i2c.h>
++#include <linux/hwmon.h>
++#include <linux/hwmon-sysfs.h>
++#include <linux/err.h>
++#include <linux/mutex.h>
++#include <linux/sysfs.h>
++#include <linux/slab.h>
++#include <linux/delay.h>
++
++
++#define DEBUG_MODE 0
++#if (DEBUG_MODE == 1)
++	#define DEBUG_PRINT(fmt, args...)										 \
++		printk (KERN_INFO "%s:%s[%d]: " fmt "\r\n", __FILE__, __FUNCTION__, __LINE__, ##args)
++#else
++	#define DEBUG_PRINT(fmt, args...)
++#endif
++
++
++#define DRIVER_NAME                     "marvell_i2c"
++#define I2C_RW_RETRY_COUNT              10
++#define I2C_RW_RETRY_INTERVAL           60 /* ms */
++#define MARVELL_I2C_ADDR                (0xAC >> 1)
++
++/* 88E1111 Extended PHY Specific Status Register */
++#define PHY_CTRL_REG                    0x00
++#define PHY_AUTO_NEG                    0x04
++#define PHY_1000BASE_T_CONTROL          0x09
++#define PHY_SPEC_CONTROL                0x10
++#define PHY_SPEC_STATUS                 0x11
++#define PHY_SPEC_CONTROL_EXT            0x14
++#define PHY_SPEC_STATUS_EXT             0x1B
++
++enum marvell_i2c_sysfs_attributes {
++	PHY_CONFIG,
++};
++
++static ssize_t i2c_phy_set(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++
++/* attributes for sysfs */
++static SENSOR_DEVICE_ATTR(phy_config, S_IWUSR, NULL, i2c_phy_set, PHY_CONFIG);
++
++static struct attribute *marvell_i2c_attributes[] = {
++	&sensor_dev_attr_phy_config.dev_attr.attr,
++	NULL
++};
++
++static const struct attribute_group marvell_i2c_group = {
++	.attrs = marvell_i2c_attributes,
++};
++
++enum port_numbers {
++	marvell_i2c1,
++	marvell_i2c2
++};
++
++#define I2C_DEV_ID(x) { #x, x}
++
++static const struct i2c_device_id marvell_i2c_device_id[] = {
++I2C_DEV_ID(marvell_i2c1),
++I2C_DEV_ID(marvell_i2c2),
++{ /* LIST END */ }
++};
++MODULE_DEVICE_TABLE(i2c, marvell_i2c_device_id);
++
++struct marvell_i2c_data {
++	struct mutex		   update_lock;
++	struct i2c_client	  *client;
++};
++
++
++static s32 marvell_i2c_reg_get(struct i2c_client *client, u8 reg)
++{
++	s32 status = 0, retry = I2C_RW_RETRY_COUNT;
++
++	while (retry) {
++		status = i2c_smbus_read_word_data(client, reg);
++			if (unlikely(status < 0)) {
++				msleep(I2C_RW_RETRY_INTERVAL);
++				retry--;
++				continue;
++		}
++
++		break;
++	}
++
++	if(status < 0){
++		return status;
++	}
++
++	return le16_to_cpu(status);
++}
++static s32 marvell_i2c_reg_set(struct i2c_client *client, u8 reg, u16 value)
++{
++	s32 status = 0, retry = I2C_RW_RETRY_COUNT;
++
++	while (retry) {
++		status = i2c_smbus_write_word_data(client, reg, cpu_to_le16(value));
++		if (unlikely(status < 0)) {
++			msleep(I2C_RW_RETRY_INTERVAL);
++			retry--;
++			continue;
++		}
++
++		break;
++	}
++
++	return status;
++}
++
++static ssize_t i2c_phy_set(struct device *dev, struct device_attribute *da,
++			const char *buf, size_t count)
++{
++	struct i2c_client *client = to_i2c_client(dev);
++	struct marvell_i2c_data *data = i2c_get_clientdata(client);
++	s32 status;
++
++	status = marvell_i2c_reg_get(client, PHY_SPEC_STATUS_EXT);
++	if(status < 0){
++		dev_err(&client->dev, "Unable access phy!");
++		return -ENODEV;
++	}
++
++	mutex_lock(&data->update_lock);
++	marvell_i2c_reg_set(client, PHY_SPEC_STATUS_EXT, 0x9084);
++	marvell_i2c_reg_set(client, PHY_1000BASE_T_CONTROL, 0x0f00);
++	marvell_i2c_reg_set(client, PHY_CTRL_REG, 0x8140);
++	marvell_i2c_reg_set(client, PHY_AUTO_NEG, 0x0de1);
++	marvell_i2c_reg_set(client, PHY_CTRL_REG, 0x9149);
++	marvell_i2c_reg_set(client, 0x18, 0x4108);
++	mutex_unlock(&data->update_lock);
++
++	return count;
++}
++
++
++/* Platform dependent +++ */
++static int marvell_i2c_device_probe(struct i2c_client *client,
++			const struct i2c_device_id *dev_id)
++{
++	struct marvell_i2c_data *data = NULL;
++	int status;
++
++	data = kzalloc(sizeof(struct marvell_i2c_data), GFP_KERNEL);
++	if(!data) {
++		return -ENOMEM;
++	}
++
++	if(client->addr != MARVELL_I2C_ADDR) {
++		return -ENODEV;
++	}
++
++	if(!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_WORD_DATA )) {
++		return -EIO;
++	}
++
++	dev_info(&client->dev, "marvell_i2c '%s'\n", client->name);
++	i2c_set_clientdata(client, data);
++	mutex_init(&data->update_lock);
++	data->client = client;
++
++	status = sysfs_create_group(&client->dev.kobj, &marvell_i2c_group);
++	if(status) {
++		goto exit_free;
++	}
++
++	return 0;
++
++exit_free:
++	kfree(data);
++
++	return status;
++}
++/* Platform dependent --- */
++
++static int marvell_i2c_device_remove(struct i2c_client *client)
++{
++	sysfs_remove_group(&client->dev.kobj, &marvell_i2c_group);
++
++	return 0;
++}
++
++/* Addresses scanned
++ */
++static const unsigned short normal_i2c[] = { I2C_CLIENT_END };
++
++static struct i2c_driver marvell_i2c_driver = {
++	.driver = {
++		.name	  = DRIVER_NAME,
++	},
++	.probe		  = marvell_i2c_device_probe,
++	.remove		  = marvell_i2c_device_remove,
++	.id_table	  = marvell_i2c_device_id,
++	.address_list = normal_i2c,
++};
++
++static int __init marvell_i2c_init(void)
++{
++	return i2c_add_driver(&marvell_i2c_driver);
++}
++
++static void __exit marvell_i2c_exit(void)
++{
++	i2c_del_driver(&marvell_i2c_driver);
++}
++
++MODULE_AUTHOR("Roy Chuang <roy_chuang@edge-core.com>");
++MODULE_DESCRIPTION("marvell phy i2c");
++MODULE_LICENSE("GPL");
++
++module_init(marvell_i2c_init);
++module_exit(marvell_i2c_exit);
++
+-- 
+1.9.1
+
