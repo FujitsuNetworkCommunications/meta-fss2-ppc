@@ -44,6 +44,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0011-decrease-Dpaa-MTU-add-BRCM-tag-and-FCS-need-use-1.patch     \
                         file://${MACHINE}/patches/0012-modify-non-linear-sk_buff-append-bytes-in-Head.patch        \
                         file://${MACHINE}/patches/0013-support-fan-controller.patch                                \
+                        file://${MACHINE}/patches/0014-add-marvell-phy-driver-for-controlling-the-phy-insid.patch  \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"

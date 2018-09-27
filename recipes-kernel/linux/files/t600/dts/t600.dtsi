@@ -325,6 +325,10 @@
 						compatible = "at24,24c02";
 						reg = <0x51>;
 					};
+					phy@56 {
+						compatible = "marvell_i2c1";
+						reg = <0x56>;
+					};
 				};
 
 				i2c@1 {
@@ -339,6 +343,10 @@
 					eeprom@51 {
 						compatible = "at24,24c02";
 						reg = <0x51>;
+					};
+					phy@56 {
+						compatible = "marvell_i2c2";
+						reg = <0x56>;
 					};
 				};
 
