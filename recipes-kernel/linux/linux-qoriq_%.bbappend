@@ -46,6 +46,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0013-support-fan-controller.patch                                \
                         file://${MACHINE}/patches/0014-add-marvell-phy-driver-for-controlling-the-phy-insid.patch  \
                         file://${MACHINE}/patches/0015-support-detect-serial-cable-presencs-DCD-bit.patch          \
+                        file://${MACHINE}/patches/0016-ACCTON-260-dco-read-value-is-strange.patch                  \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
