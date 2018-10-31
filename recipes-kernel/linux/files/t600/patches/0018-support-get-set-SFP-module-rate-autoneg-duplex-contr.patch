@@ -1,0 +1,269 @@
+From 4cd1f719de39af845d01058dab83a0ef11c3e172 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 31 Oct 2018 20:07:11 +0800
+Subject: [PATCH] support get/set SFP(module) rate, autoneg, duplex control
+
+ACCTON-274 LCN SFP rate, autoneg, duplex control is required.
+---
+ drivers/net/phy/marvell_i2c.c | 213 +++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 212 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/phy/marvell_i2c.c b/drivers/net/phy/marvell_i2c.c
+index a8fb9d7..2f2256a 100644
+--- a/drivers/net/phy/marvell_i2c.c
++++ b/drivers/net/phy/marvell_i2c.c
+@@ -30,6 +30,8 @@
+ #include <linux/sysfs.h>
+ #include <linux/slab.h>
+ #include <linux/delay.h>
++#include <linux/mii.h>
++#include <linux/ethtool.h>
+ 
+ 
+ #define DEBUG_MODE 0
+@@ -46,7 +48,7 @@
+ #define I2C_RW_RETRY_INTERVAL           60 /* ms */
+ #define MARVELL_I2C_ADDR                (0xAC >> 1)
+ 
+-/* 88E1111 Extended PHY Specific Status Register */
++/* 88E1111 Extended PHY registers */
+ #define PHY_CTRL_REG                    0x00
+ #define PHY_AUTO_NEG                    0x04
+ #define PHY_1000BASE_T_CONTROL          0x09
+@@ -55,17 +57,52 @@
+ #define PHY_SPEC_CONTROL_EXT            0x14
+ #define PHY_SPEC_STATUS_EXT             0x1B
+ 
++/* Phy specific status register. */
++#define PSSR_SPEED1000                  0x8000	/* MSB of Speed (1000)         */
++#define PSSR_SPEED100                   0x4000	/* LSB of Speed (100)          */
++#define PSSR_FULLDPLX                   0x2000	/* Full duplex                 */
++#define PSSR_PAGE                       0x1000	/* Page recevied               */
++#define PSSR_SD_RESOLVED                0x0800	/* Speed and duplex resolved   */
++#define PSSR_LINK                       0x0400	/* Link up                     */
++#define PSSR_CABLE_LEN                  0x0380	/* Cable length                */
++#define PSSR_CROSSOVER                  0x0040	/* MDI crossover status        */
++#define PSSR_DOWNSHIFT                  0x0020	/* Downshift                   */
++#define PSSR_COPPER_ENERGY              0x0010	/* Detect energy               */
++#define PSSR_TX_PAUSE                   0x0008	/* Transmit pause enable       */
++#define PSSR_RX_PAUSE                   0x0004	/* Receive pause enable        */
++#define PSSR_POLARITY                   0x0002	/* Reversed                    */
++#define PSSR_JABBER                     0x0001	/* Jabber                      */
++
++
+ enum marvell_i2c_sysfs_attributes {
+ 	PHY_CONFIG,
++	CTL_ANEG_ENABLE,
++	CTL_SPEED,
++	CTL_DUPLEX,
++	STATUS_SPEED,
++	STATUS_DUPLEX,
+ };
+ 
+ static ssize_t i2c_phy_set(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++static ssize_t i2c_phy_crl_get(struct device* dev, struct device_attribute* da, char* buf);
++static ssize_t i2c_phy_crl_set(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++static ssize_t i2c_phy_status_get(struct device* dev, struct device_attribute* da, char* buf);
+ 
+ /* attributes for sysfs */
+ static SENSOR_DEVICE_ATTR(phy_config, S_IWUSR, NULL, i2c_phy_set, PHY_CONFIG);
++static SENSOR_DEVICE_ATTR(ctl_aneg_enable, S_IWUSR | S_IRUGO, i2c_phy_crl_get, i2c_phy_crl_set, CTL_ANEG_ENABLE);
++static SENSOR_DEVICE_ATTR(ctl_speed, S_IWUSR | S_IRUGO, i2c_phy_crl_get, i2c_phy_crl_set, CTL_SPEED);
++static SENSOR_DEVICE_ATTR(ctl_duplex, S_IWUSR | S_IRUGO, i2c_phy_crl_get, i2c_phy_crl_set, CTL_DUPLEX);
++static SENSOR_DEVICE_ATTR(status_speed, S_IRUGO, i2c_phy_status_get, NULL, STATUS_SPEED);
++static SENSOR_DEVICE_ATTR(status_duplex, S_IRUGO, i2c_phy_status_get, NULL, STATUS_DUPLEX);
+ 
+ static struct attribute *marvell_i2c_attributes[] = {
+ 	&sensor_dev_attr_phy_config.dev_attr.attr,
++	&sensor_dev_attr_ctl_aneg_enable.dev_attr.attr,
++	&sensor_dev_attr_ctl_speed.dev_attr.attr,
++	&sensor_dev_attr_ctl_duplex.dev_attr.attr,
++	&sensor_dev_attr_status_speed.dev_attr.attr,
++	&sensor_dev_attr_status_duplex.dev_attr.attr,
+ 	NULL
+ };
+ 
+@@ -157,6 +194,180 @@ static ssize_t i2c_phy_set(struct device *dev, struct device_attribute *da,
+ 	return count;
+ }
+ 
++static ssize_t i2c_phy_crl_get(struct device* dev, struct device_attribute* da, char* buf)
++{
++	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++	struct i2c_client *client = to_i2c_client(dev);
++	s32 status;
++	u16 value = 0;
++
++	status = marvell_i2c_reg_get(client, PHY_CTRL_REG);
++	if(status < 0){
++		dev_err(&client->dev, "Unable access phy!");
++		return -ENODEV;
++	}
++
++	switch(attr->index)
++	{
++		case CTL_ANEG_ENABLE:
++			if(status & BMCR_ANENABLE){
++				value = AUTONEG_ENABLE;
++			}
++			else{
++				value = AUTONEG_DISABLE;
++			}
++			break;
++		case CTL_SPEED:
++			if(status & BMCR_SPEED1000){
++				value = SPEED_1000;
++			}
++			else if(status & BMCR_SPEED100){
++				value = SPEED_100;
++			}
++			else{
++				value = SPEED_10;
++			}
++			break;
++		case CTL_DUPLEX:
++			if(status & BMCR_FULLDPLX){
++				value = DUPLEX_FULL;
++			}
++			else{
++				value = DUPLEX_HALF;
++			}
++			break;
++		default:
++			dev_err(&client->dev, "Attribute not supported");
++			break;
++	}
++
++	return sprintf(buf, "%d\n", value);
++}
++
++static ssize_t i2c_phy_crl_set(struct device *dev, struct device_attribute *da,
++			const char *buf, size_t count)
++{
++	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++	struct i2c_client *client = to_i2c_client(dev);
++	struct marvell_i2c_data *data = i2c_get_clientdata(client);
++	s32 status;
++	int error, cmd;
++
++	mutex_lock(&data->update_lock);
++	status = marvell_i2c_reg_get(client, PHY_CTRL_REG);
++	if(status < 0){
++		dev_err(&client->dev, "Unable access phy!");
++		error = status;
++		goto exit;
++	}
++
++	error = kstrtoint(buf, 10, &cmd);
++	if (error) {
++		goto exit;
++	}
++
++	switch(attr->index)
++	{
++		case CTL_ANEG_ENABLE:
++			if(AUTONEG_ENABLE == cmd){
++				status |= (BMCR_ANENABLE | BMCR_ANRESTART);
++			}
++			else if(AUTONEG_DISABLE == cmd){
++				status &= ~BMCR_ANENABLE;
++			}
++			else{
++				error = -ERANGE;
++				goto exit;
++			}
++			break;
++		case CTL_SPEED:
++			switch(cmd)
++			{
++				case SPEED_10:
++					status &= ~BMCR_SPEED1000;
++					status &= ~BMCR_SPEED100;
++					break;
++				case SPEED_100:
++					status &= ~BMCR_SPEED1000;
++					status |= BMCR_SPEED100;
++					break;
++				case SPEED_1000:
++					status |= BMCR_SPEED1000;
++					status &= ~BMCR_SPEED100;
++					break;
++				default:
++					error = -ERANGE;
++					goto exit;
++			}
++			break;
++		case CTL_DUPLEX:
++			if(DUPLEX_HALF== cmd){
++				status &= ~BMCR_FULLDPLX;
++			}
++			else if(DUPLEX_FULL == cmd){
++				status |= BMCR_FULLDPLX;
++			}
++			else{
++				error = -ERANGE;
++				goto exit;
++			}
++			break;
++		default:
++			dev_err(&client->dev, "Attribute not supported");
++			break;
++	}
++
++	status |= BMCR_RESET;
++	marvell_i2c_reg_set(client, PHY_CTRL_REG, status);
++	mutex_unlock(&data->update_lock);
++	return count;
++
++exit:
++	mutex_unlock(&data->update_lock);
++	return error;
++}
++
++static ssize_t i2c_phy_status_get(struct device* dev, struct device_attribute* da, char* buf)
++{
++	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++	struct i2c_client *client = to_i2c_client(dev);
++	s32 status;
++	u16 value = 0;
++
++	status = marvell_i2c_reg_get(client, PHY_SPEC_STATUS);
++	if(status < 0){
++		dev_err(&client->dev, "Unable access phy!");
++		return -ENODEV;
++	}
++
++	switch(attr->index)
++	{
++		case STATUS_SPEED:
++			if(status & PSSR_SPEED1000){
++				value = SPEED_1000;
++			}
++			else if(status & PSSR_SPEED100){
++				value = SPEED_100;
++			}
++			else{
++				value = SPEED_10;
++			}
++			break;
++		case STATUS_DUPLEX:
++			if(status & PSSR_FULLDPLX){
++				value = DUPLEX_FULL;
++			}
++			else{
++				value = DUPLEX_HALF;
++			}
++			break;
++		default:
++			dev_err(&client->dev, "Attribute not supported");
++			break;
++	}
++
++	return sprintf(buf, "%d\n", value);
++}
+ 
+ /* Platform dependent +++ */
+ static int marvell_i2c_device_probe(struct i2c_client *client,
+-- 
+1.9.1
+

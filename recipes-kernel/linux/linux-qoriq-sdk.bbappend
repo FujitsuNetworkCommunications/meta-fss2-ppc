@@ -29,6 +29,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0015-support-detect-serial-cable-presencs-DCD-bit.patch          \
                         file://${MACHINE}/patches/0016-ACCTON-260-dco-read-value-is-strange.patch                  \
                         file://${MACHINE}/patches/0017-modify-dpa-RX-TX-to-support-mtu-to-9000.patch               \
+                        file://${MACHINE}/patches/0018-support-get-set-SFP-module-rate-autoneg-duplex-contr.patch  \
                        "
                        
 
