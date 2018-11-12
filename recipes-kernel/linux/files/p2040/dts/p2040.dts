@@ -1,0 +1,347 @@
+/*
+ * FNC P2040-eval Device Tree Source
+ *
+ * Copyright 2011-2012 Freescale Semiconductor Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *     * Neither the name of Freescale Semiconductor nor the
+ *       names of its contributors may be used to endorse or promote products
+ *       derived from this software without specific prior written permission.
+ *
+ *
+ * ALTERNATIVELY, this software may be distributed under the terms of the
+ * GNU General Public License ("GPL") as published by the Free Software
+ * Foundation, either version 2 of that License or (at your option) any
+ * later version.
+ *
+ * THIS SOFTWARE IS PROVIDED BY Freescale Semiconductor ``AS IS'' AND ANY
+ * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL Freescale Semiconductor BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/include/ "fsl/p2040evalsi-pre.dtsi"
+
+/ {
+	model = "fsl,P2040EVAL";
+	compatible = "fsl,P2041RDB";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	interrupt-parent = <&mpic>;
+
+	aliases {
+		ethernet0 = &enet0;
+		ethernet1 = &enet1;
+		ethernet2 = &enet2;
+		ethernet3 = &enet3;
+		ethernet4 = &enet4;
+		ethernet5 = &enet5;
+		phy_rgmii_c = &phy_rgmii_c;
+		phy_sgmii_6 = &phy_sgmii_6;
+		phy_sgmii_7 = &phy_sgmii_7;
+	};
+
+	memory {
+		device_type = "memory";
+	};
+
+	dcsr: dcsr@f00000000 {
+		ranges = <0x00000000 0xf 0x00000000 0x01008000>;
+	};
+
+	bportals: bman-portals@0b1000000 {
+		ranges = <0x0 0x0 0xb1000000 0x200000>;
+	};
+
+	qportals: qman-portals@0b1200000 {
+		ranges = <0x0 0x0 0xb1200000 0x200000>;
+	};
+
+	soc: soc@0b0000000 {
+		ranges = <0x00000000 0x0 0xb0000000 0x1000000>;
+		reg = <0x0 0xb0000000 0 0x00001000>;
+		spi@110000 {
+			flash@0 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "spansion,m25p20";
+				reg = <0>;
+				spi-max-frequency = <40000000>; /* input clock */
+			};
+		};
+
+		i2c@118000 {
+			lm75b@48 {
+				compatible = "nxp,lm75a";
+				reg = <0x48>;
+			};
+			eeprom@50 {
+				compatible = "at24,24c256";
+				reg = <0x50>;
+			};
+			rtc@51 {
+				compatible = "nxp,pcf8563";
+				reg = <0x51>;
+			};
+			adt7461@4c {
+				compatible = "adi,adt7461";
+				reg = <0x4c>;
+			};
+		};
+
+		i2c@118100 {
+			eeprom@50 {
+				compatible = "at24,24c256";
+				reg = <0x50>;
+			};
+		};
+
+		fman0: fman@400000 {
+			enet0: ethernet@e0000 {
+				tbi-handle = <&tbi0>;
+				phy-connection-type = "sgmii";
+				fixed-link = <4 1 1000 0 0>;
+			};
+
+			mdio0: mdio@e1120 {
+				tbi0: tbi-phy@8 {
+					reg = <0x8>;
+					device_type = "tbi-phy";
+				};
+				phy_sgmii_6: ethernet-phy@6 {
+					reg = <0x6>;
+				};
+				phy_sgmii_7: ethernet-phy@7 {
+					reg = <0x7>;
+				};
+				phy_rgmii_c: ethernet-phy@c {
+					reg = <0xc>;
+				};
+			};
+
+			enet1: ethernet@e2000 {
+				tbi-handle = <&tbi1>;
+				phy-connection-type = "sgmii";
+				fixed-link = <5 1 1000 0 0>;
+			};
+
+			mdio@e3120 {
+				tbi1: tbi-phy@8 {
+					reg = <8>;
+					device_type = "tbi-phy";
+				};
+			};
+
+			enet2: ethernet@e4000 {
+				tbi-handle = <&tbi2>;
+				phy-connection-type = "sgmii";
+				fixed-link = <6 1 1000 0 0>;
+			};
+
+			mdio@e5120 {
+				tbi2: tbi-phy@8 {
+					reg = <8>;
+					device_type = "tbi-phy";
+				};
+			};
+
+			enet3: ethernet@e6000 {
+				tbi-handle = <&tbi3>;
+				phy-connection-type = "sgmii";
+				fixed-link = <7 1 1000 0 0>;
+			};
+
+			mdio@e7120 {
+				tbi3: tbi-phy@8 {
+					reg = <8>;
+					device_type = "tbi-phy";
+				};
+			};
+
+			enet4: ethernet@e8000 {
+				tbi-handle = <&tbi4>;
+				phy-handle = <&phy_rgmii_c>;
+				phy-connection-type = "rgmii";
+			};
+
+			mdio@e9120 {
+				tbi4: tbi-phy@29 {
+					reg = <0x1d>;
+					device_type = "tbi-phy";
+				};
+			};
+
+			enet5: ethernet@f0000 {
+				/*
+				 * phy-handle will be updated by U-Boot to
+				 * reflect the actual slot the XAUI card is in.
+				 */
+				phy-handle = <&phy_xgmii_2>;
+				phy-connection-type = "xgmii";
+			};
+
+			mdio@f1000 {
+				/* XAUI card in slot 2 */
+				phy_xgmii_2: ethernet-phy@0 {
+					reg = <0x0>;
+				};
+			};
+		};
+	};
+
+	lbc: localbus@0b0124000 {
+		reg = <0x0 0xb0124000 0 0x1000>;
+		ranges = <0 0 0x0 0xf8000000 0x04000000
+			  1 0 0x0 0xc0000000 0x04000000>;
+		boot_nor@0,0 {
+                	#address-cells = <1>;
+                	#size-cells = <1>;
+               		compatible = "cfi-flash";
+                	reg = <0x0 0x0 0x4000000>;
+                	bank-width = <2>;
+                	device-width = <1>;
+
+                	partition@3f80000 {
+	                        /* 512KB for u-boot */
+        	                reg = <0x03f80000 0x00080000>;
+                	        label = "NOR uboot Image";
+                        	read-only;
+	                };
+	
+        	        partition@3f60000 {
+                	        /* 128KB for u-boot env */
+                        	reg = <0x03f60000 0x00020000>;
+                        	label = "NOR uboot-env1";
+                	};
+
+                	partition@10A0000 {
+                	        /* 32MB FPGA Flash            */
+                        	reg = <0x010a0000 0x02000000>;
+                        	label = "Unused";
+                	};
+
+                	partition@A00000 {
+                        	/* 40MB for JFFS2 based Root file System */
+                        	reg = <0x00A00000 0x02600000>;
+                        	label = "NOR JFFS2 Root File System";
+                	};
+
+                	partition@800000 {
+                        	/* 2MB for MTD OOPS */
+                        	reg = <0x00800000 0x0200000>;
+                        	label = "MTD OOPS";
+                	};
+
+                	partition@700000 {
+                        	/* 1MB for Hardware device tree */
+                        	reg = <0x00700000 0x00100000>;
+                        	label = "NOR device tree dtb Image";
+                	};
+
+                	partition@20000 {
+                        	/* 7MB for Linux Kernel */
+                        	reg = <0x00020000 0x006e0000>;
+                        	label = "NOR Linux Kernel Image";
+                	};
+
+                	partition@0 {
+                        	/* This location must not be altered  */
+                        	/* 128KB for RCW */
+                        	reg = <0x00000000 0x00020000>;
+                        	label = "NOR RCW";
+                        	read-only;
+                	};
+        	};
+
+		app_nor@1,0 {
+                	#address-cells = <1>;
+                	#size-cells = <1>;
+               		compatible = "cfi-flash";
+                	reg = <0x1 0x0 0x4000000>;
+                	bank-width = <2>;
+                	device-width = <1>;
+
+                        partition@0 {
+	                        /* Drop-bear key */
+        	                reg = <0x00000000 0x00100000>;
+                	        label = "Drop-bear key";
+	                };
+                        partition@800000 {
+	                        /*8M FPGA flash */
+        	                reg = <0x000800000 0x00020000>;
+                	        label = "BANK:A FPGA:01";
+	                };
+                        partition@1000000 {
+	                        /*8M FPGA flash */
+        	                reg = <0x001000000 0x00020000>;
+                	        label = "BANK:A FPGA:02";
+	                };
+                        partition@1800000 {
+	                        /*8M FPGA flash */
+        	                reg = <0x001800000 0x00020000>;
+                	        label = "BANK:A FPGA:03";
+	                };
+                        partition@2000000 {
+	                        /*8M FPGA flash */
+        	                reg = <0x002000000 0x00020000>;
+                	        label = "BANK:B FPGA:01";
+	                };
+                        partition@2800000 {
+	                        /*8M FPGA flash */
+        	                reg = <0x002800000 0x00020000>;
+                	        label = "BANK:B FPGA:02";
+	                };
+                        partition@3000000 {
+	                        /*8M FPGA flash */
+        	                reg = <0x003000000 0x00020000>;
+                	        label = "BANK:B FPGA:03";
+	                };
+
+		};
+	};
+
+	fsl,dpaa {
+		compatible = "fsl,p2041-dpaa", "fsl,dpaa";
+
+		ethernet@0 {
+			compatible = "fsl,p2041-dpa-ethernet", "fsl,dpa-ethernet";
+			fsl,fman-mac = <&enet0>;
+		};
+		ethernet@1 {
+			compatible = "fsl,p2041-dpa-ethernet", "fsl,dpa-ethernet";
+			fsl,fman-mac = <&enet1>;
+		};
+		ethernet@2 {
+			compatible = "fsl,p2041-dpa-ethernet", "fsl,dpa-ethernet";
+			fsl,fman-mac = <&enet2>;
+		};
+		ethernet@3 {
+			compatible = "fsl,p2041-dpa-ethernet", "fsl,dpa-ethernet";
+			fsl,fman-mac = <&enet3>;
+		};
+		ethernet@4 {
+			compatible = "fsl,p2041-dpa-ethernet", "fsl,dpa-ethernet";
+			fsl,fman-mac = <&enet4>;
+		};
+		ethernet@5 {
+			compatible = "fsl,p2041-dpa-ethernet", "fsl,dpa-ethernet";
+			fsl,fman-mac = <&enet5>;
+		};
+	};
+};
+
+/include/ "fsl/p2040evalsi-post.dtsi"
+
+/include/ "fsl/qoriq-dpaa-res1.dtsi"

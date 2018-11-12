@@ -22,15 +22,6 @@ SRC_URI += "file://${MACHINE}/dts                     \
             file://${MACHINE}/kconfig                 \
                   "
 
-# Example to add T600 patches/uboot env
-# SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-L100-PCI-kernel.patch     \
-#                         file://${MACHINE}/uboot_scripts/uboot_env_3b11.txt       \
-#                         file://${MACHINE}/uboot_scripts/uboot_env_3r11.txt       \
-#                         file://${MACHINE}/uboot_scripts/uboot_env_3j11.txt       \
-#                         file://${MACHINE}/uboot_scripts/uboot_env_9l14.txt       \
-#                         file://${MACHINE}/patches/0001-disableForcedSpeedReduction.patch \
-#                    "
-
 SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-linux-3.12.patch     \
                         file://${MACHINE}/patches/0002-Chage-to-fit-T600-NOR-flash-partition.patch  \
                         file://${MACHINE}/patches/0003-add-accton-kernel-driver.patch               \
@@ -54,10 +45,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
 
-# Device tree is todo at this point, picked an existing one to get kernel to compile
 KERNEL_DEVICETREE = "${MACHINE}.dtb"
-# KERNEL_DEVICETREE = "t4240emu.dtb"
-#KERNEL_DEVICETREE = "t2080rdb.dtb t2080rdb-usdpaa.dtb"
 
 # Example syntax to add device tree
 # KERNEL_DEVICETREE_t600 = "${MACHINE}.dtb ${MACHINE}-f100.dtb"

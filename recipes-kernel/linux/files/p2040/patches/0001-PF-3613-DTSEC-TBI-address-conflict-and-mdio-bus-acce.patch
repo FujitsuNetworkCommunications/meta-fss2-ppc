@@ -1,0 +1,73 @@
+From 382708edc576f42254dd9cb86962da5221cf406f Mon Sep 17 00:00:00 2001
+From: Aravind Kalliguddi <akalligu@localhost>
+Date: Thu, 16 Mar 2017 11:30:34 -0500
+Subject: [PATCH] PF-3613: DTSEC TBI address conflict and mdio bus access API
+
+---
+ .../freescale/fman/Peripherals/FM/MAC/dtsec.c      |  4 ++++
+ drivers/net/phy/mdio_bus.c                         | 27 ++++++++++++++++++++++
+ 2 files changed, 31 insertions(+)
+
+diff --git a/drivers/net/ethernet/freescale/fman/Peripherals/FM/MAC/dtsec.c b/drivers/net/ethernet/freescale/fman/Peripherals/FM/MAC/dtsec.c
+index ccaaaec..ee50204 100644
+--- a/drivers/net/ethernet/freescale/fman/Peripherals/FM/MAC/dtsec.c
++++ b/drivers/net/ethernet/freescale/fman/Peripherals/FM/MAC/dtsec.c
+@@ -515,6 +515,7 @@ static t_Error DtsecConfigTbiPhyAddr(t_Handle h_Dtsec, uint8_t newVal)
+     SANITY_CHECK_RETURN_ERROR(p_Dtsec->p_DtsecDriverParam, E_INVALID_STATE);
+ 
+     p_Dtsec->p_DtsecDriverParam->tbi_phy_addr = newVal;
++    p_Dtsec->p_DtsecDriverParam->tbipa = newVal;
+ 
+     return E_OK;
+ }
+@@ -1483,6 +1484,9 @@ t_Handle  DTSEC_Config(t_FmMacParams *p_FmMacParam)
+ 
+     fman_dtsec_defconfig(p_DtsecDriverParam);
+ 
++#define  P2040_EVAL_TBIPA    0x1a 
++    DtsecConfigTbiPhyAddr((t_Handle ) p_Dtsec, P2040_EVAL_TBIPA); 
++
+     p_Dtsec->p_MemMap           = (struct dtsec_regs *)UINT_TO_PTR(baseAddr);
+     p_Dtsec->p_MiiMemMap        = (struct dtsec_mii_reg *)UINT_TO_PTR(baseAddr + DTSEC_TO_MII_OFFSET);
+     p_Dtsec->addr               = ENET_ADDR_TO_UINT64(p_FmMacParam->addr);
+diff --git a/drivers/net/phy/mdio_bus.c b/drivers/net/phy/mdio_bus.c
+index 044b532..f0b3bb3 100644
+--- a/drivers/net/phy/mdio_bus.c
++++ b/drivers/net/phy/mdio_bus.c
+@@ -247,6 +247,33 @@ struct phy_device *mdiobus_scan(struct mii_bus *bus, int addr)
+ 	return phydev;
+ }
+ EXPORT_SYMBOL(mdiobus_scan);
++static int mdiobus_match_name( struct device * dev, void * data )
++{
++    const char * name = data;
++
++    return sysfs_streq( name, dev_name( dev ) );
++}
++
++/**
++ * mdiobus_find_by_name - Convenience function for retrieving an mii_bus pointer
++ *                        by name
++ * @name: name of the bus being searched for
++ */
++struct mii_bus * mdiobus_find_by_name( char * name )
++{
++    struct device * dev;
++
++    /* search devices registered for with the mdio_bus_class using the device
++       name as the matching criteria */
++    dev = class_find_device( &mdio_bus_class,
++                             NULL,
++                             (void *)name,
++                             mdiobus_match_name );
++
++    /* return the mii_bus pointer or NULL if none was found */
++    return dev ? container_of( dev, struct mii_bus, dev ) : NULL;
++}
++EXPORT_SYMBOL( mdiobus_find_by_name );
+ 
+ /**
+  * mdiobus_read - Convenience function for reading a given MII mgmt register
+-- 
+1.8.4
+

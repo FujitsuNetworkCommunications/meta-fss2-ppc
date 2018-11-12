@@ -1,0 +1,102 @@
+From 2322301bae501de067e6dda9b1253e79a083fd56 Mon Sep 17 00:00:00 2001
+From: Aravind Kalliguddi <akalligu@localhost>
+Date: Wed, 17 May 2017 05:06:13 -0500
+Subject: [PATCH] PF-3956 Enable reboot support for eval p2040
+ Currently Hard reset is supported, Need to support
+ watchdog and warm reset
+
+---
+ arch/powerpc/sysdev/fsl_soc.c |   51 +++++++++++++++++++++++++++++++---------
+ 1 files changed, 39 insertions(+), 12 deletions(-)
+
+diff --git a/arch/powerpc/sysdev/fsl_soc.c b/arch/powerpc/sysdev/fsl_soc.c
+index 228cf91..3a3c22d 100644
+--- a/arch/powerpc/sysdev/fsl_soc.c
++++ b/arch/powerpc/sysdev/fsl_soc.c
+@@ -47,6 +47,11 @@ extern void init_fec_ioports(struct fs_platform_info*);
+ extern void init_smc_ioports(struct fs_uart_platform_info*);
+ static phys_addr_t immrbase = -1;
+ 
++static void finity_hard_reset(void);
++#define CTRL_REG 	0xd0000000
++
++static volatile __be32 __iomem *ctrl_reg = 0x0;
++
+ phys_addr_t get_immrbase(void)
+ {
+ 	struct device_node *soc;
+@@ -212,10 +217,11 @@ arch_initcall(of_add_fixed_phys);
+ #if defined(CONFIG_FSL_SOC_BOOKE) || defined(CONFIG_PPC_86xx)
+ static __be32 __iomem *rstcr;
+ 
+-static int __init setup_rstcr(void)
++static int __init setup_finity_reset(void)
+ {
+ 	struct device_node *np;
+ 
++
+ 	for_each_node_by_name(np, "global-utilities") {
+ 		if ((of_get_property(np, "fsl,has-rstcr", NULL))) {
+ 			rstcr = of_iomap(np, 0) + 0xb0;
+@@ -226,26 +232,47 @@ static int __init setup_rstcr(void)
+ 		}
+ 	}
+ 
+-	if (!rstcr && ppc_md.restart == fsl_rstcr_restart)
+-		printk(KERN_ERR "No RSTCR register, warm reboot won't work\n");
++	ctrl_reg = ioremap_nocache(CTRL_REG, 64);	        
++
++        if(NULL == ctrl_reg)
++	{
++		printk(KERN_ERR "%s:%s:%d: ioremap failed. \n",
++			__FILE__, __FUNCTION__, __LINE__);
++	}
++
++	ppc_md.restart = fsl_rstcr_restart;
++	ppc_md.power_off = finity_hard_reset;
++	ppc_md.halt = finity_hard_reset;
+ 
+ 	if (np)
+ 		of_node_put(np);
+-
++	
+ 	return 0;
+ }
++arch_initcall(setup_finity_reset);
++static void finity_handle_shutdown(int resettype)
++{
+ 
+-arch_initcall(setup_rstcr);
+-
++	local_irq_disable();
++ 	if(ctrl_reg == 0) {
++		printk(KERN_ERR, "%s:%s():%d: ctrl reg pointer not initalized. \n",
++			__FILE__,__FUNCTION__, __LINE__);
++	}else{
++		*(unsigned short *)((unsigned char * )ctrl_reg + 0x16) =  0x0001;
++	} 			
++
++	while(1) 
++ 	;
++}
+ void fsl_rstcr_restart(char *cmd)
+ {
+-	local_irq_disable();
+-	if (rstcr)
+-		/* set reset control register */
+-		out_be32(rstcr, 0x2);	/* HRESET_REQ */
+-
+-	while (1) ;
++	finity_handle_shutdown(1);
++}
++void finity_hard_reset(void)
++{
++	finity_handle_shutdown(1);
+ }
++
+ #endif
+ 
+ #if defined(CONFIG_FB_FSL_DIU) || defined(CONFIG_FB_FSL_DIU_MODULE)
+-- 
+1.7.1
+

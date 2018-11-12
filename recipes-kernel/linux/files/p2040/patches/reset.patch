@@ -1,0 +1,46 @@
+diff --git a/arch/powerpc/sysdev/fsl_soc.c b/arch/powerpc/sysdev/fsl_soc.c
+index 228cf91..fa34aa8 100644
+--- a/arch/powerpc/sysdev/fsl_soc.c
++++ b/arch/powerpc/sysdev/fsl_soc.c
+@@ -211,11 +211,29 @@ arch_initcall(of_add_fixed_phys);
+ 
+ #if defined(CONFIG_FSL_SOC_BOOKE) || defined(CONFIG_PPC_86xx)
+ static __be32 __iomem *rstcr;
++static __be16 __iomem *cpld_ctrl = 0x0;
+ 
+ static int __init setup_rstcr(void)
+ {
+ 	struct device_node *np;
+ 
++        if ( NULL == request_mem_region(0xD0000000, 0x100, "cpld") )
++        {
++            printk (KERN_ERR "File=%s():%d: request_mem_region() failed. \n", __FUNCTION__, __LINE__);
++        }
++        else 
++        {
++            cpld_ctrl = ioremap(0xd0000000, 0x100);
++            if ( NULL == cpld_ctrl )
++            {
++                printk (KERN_ERR "File=%s():%d: ioremap() failed. \n", __FUNCTION__, __LINE__);                
++            }
++            else
++            {
++                cpld_ctrl = (__be16 __iomem *)((int)cpld_ctrl + 0x16);
++            }
++        }
++
+ 	for_each_node_by_name(np, "global-utilities") {
+ 		if ((of_get_property(np, "fsl,has-rstcr", NULL))) {
+ 			rstcr = of_iomap(np, 0) + 0xb0;
+@@ -241,8 +259,11 @@ void fsl_rstcr_restart(char *cmd)
+ {
+ 	local_irq_disable();
+ 	if (rstcr)
++        {
+ 		/* set reset control register */
+ 		out_be32(rstcr, 0x2);	/* HRESET_REQ */
++                out_be16(cpld_ctrl, 0x1);	/* CPLD RESET */
++        }
+ 
+ 	while (1) ;
+ }

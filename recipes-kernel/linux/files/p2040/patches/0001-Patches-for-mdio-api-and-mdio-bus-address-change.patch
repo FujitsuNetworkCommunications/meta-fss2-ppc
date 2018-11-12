@@ -1,0 +1,112 @@
+From e1d767a6345390895f93827d005445e93c31b83d Mon Sep 17 00:00:00 2001
+From: Aravind Kalliguddi <akalligu@localhost>
+Date: Wed, 15 Mar 2017 04:53:18 -0500
+Subject: [PATCH] Patches for mdio api and mdio bus address change
+
+---
+ .../freescale/fman/inc/flib/fsl_fman_dtsec.h       |  4 +-
+ drivers/net/phy/mdio_bus.c                         | 45 ++++++++++++++++++++++
+ 2 files changed, 47 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/freescale/fman/inc/flib/fsl_fman_dtsec.h b/drivers/net/ethernet/freescale/fman/inc/flib/fsl_fman_dtsec.h
+index 940087e..46d0331 100644
+--- a/drivers/net/ethernet/freescale/fman/inc/flib/fsl_fman_dtsec.h
++++ b/drivers/net/ethernet/freescale/fman/inc/flib/fsl_fman_dtsec.h
+@@ -224,7 +224,7 @@
+ #define DEFAULT_TX_CRC			FALSE
+ #define DEFAULT_RX_CTRL_ACC		FALSE
+ #define DEFAULT_TX_PAUSE_TIME		0xf000
+-#define DEFAULT_TBIPA			5
++#define DEFAULT_TBIPA		 	0x1a	
+ #define DEFAULT_RX_PREPEND		0
+ #define DEFAULT_PTP_TSU_EN		TRUE
+ #define DEFAULT_PTP_EXCEPTION_EN	TRUE
+@@ -244,7 +244,7 @@
+ #define DEFAULT_MIN_IFG_ENFORCEMENT	0x50
+ #define DEFAULT_BACK_TO_BACK_IPG	0x60
+ #define DEFAULT_MAXIMUM_FRAME		0x600
+-#define DEFAULT_TBI_PHY_ADDR		5
++#define DEFAULT_TBI_PHY_ADDR		0x1a
+ 
+ /* register related defines (bits, field offsets..) */
+ #define DTSEC_ID1_ID			0xffff0000
+diff --git a/drivers/net/phy/mdio_bus.c b/drivers/net/phy/mdio_bus.c
+index 044b532..ed1992b 100644
+--- a/drivers/net/phy/mdio_bus.c
++++ b/drivers/net/phy/mdio_bus.c
+@@ -72,6 +72,22 @@ struct mii_bus *mdiobus_alloc_size(size_t size)
+ }
+ EXPORT_SYMBOL(mdiobus_alloc_size);
+ 
++static LIST_HEAD(mii_bus_list);
++
++struct mii_bus *mdiobus_find(const char *name)
++{
++	struct mii_bus *bus;
++
++	list_for_each_entry(bus, &mii_bus_list, list) {
++		if (!strcmp(dev_name(&bus->dev), name))
++			return bus;
++	}
++
++	return NULL;
++}
++EXPORT_SYMBOL(mdiobus_find);
++
++
+ /**
+  * mdiobus_release - mii_bus device release callback
+  * @d: the target struct device that contains the mii_bus
+@@ -175,6 +191,7 @@ int mdiobus_register(struct mii_bus *bus)
+ 	}
+ 
+ 	bus->state = MDIOBUS_REGISTERED;
++	list_add_tail(&bus->list, &mii_bus_list);
+ 	pr_info("%s: probed\n", bus->name);
+ 	return 0;
+ 
+@@ -201,6 +218,7 @@ void mdiobus_unregister(struct mii_bus *bus)
+ 			device_unregister(&bus->phy_map[i]->dev);
+ 		bus->phy_map[i] = NULL;
+ 	}
++	list_del(&bus->list);
+ }
+ EXPORT_SYMBOL(mdiobus_unregister);
+ 
+@@ -247,6 +265,33 @@ struct phy_device *mdiobus_scan(struct mii_bus *bus, int addr)
+ 	return phydev;
+ }
+ EXPORT_SYMBOL(mdiobus_scan);
++static int mdiobus_match_name( struct device * dev, void * data )
++{
++    const char * name = data;
++
++    return sysfs_streq( name, dev_name( dev ) );
++}
++
++/**
++ * mdiobus_find_by_name - Convenience function for retrieving an mii_bus pointer
++ *                        by name
++ * @name: name of the bus being searched for
++ */
++struct mii_bus * mdiobus_find_by_name( char * name )
++{
++    struct device * dev;
++
++    /* search devices registered for with the mdio_bus_class using the device
++       name as the matching criteria */
++    dev = class_find_device( &mdio_bus_class,
++                             NULL,
++                             (void *)name,
++                             mdiobus_match_name );
++
++    /* return the mii_bus pointer or NULL if none was found */
++    return dev ? container_of( dev, struct mii_bus, dev ) : NULL;
++}
++EXPORT_SYMBOL( mdiobus_find_by_name );
+ 
+ /**
+  * mdiobus_read - Convenience function for reading a given MII mgmt register
+-- 
+1.8.4
+

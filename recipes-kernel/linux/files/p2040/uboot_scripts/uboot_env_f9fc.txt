@@ -1,0 +1,72 @@
+#********* Instructions to import U-Boot environment **********************
+#
+# 1. Setup vars serverip,ipaddr,netmask,gatewayip, etc. to be able to tftp
+# 2. Reboot board
+# 3. 'tftpboot 0x1000 <relative_path_from_base_tftp_dir>/uboot_env_<unitcode>.cfg'
+# 4. 'env import -t 0x1000 0x20000'
+# 5. verify information is imported
+# 6. 'saveenv' to save environment
+#
+#************ MAC addresses set by manufacturing **************************
+# eth1addr 
+# eth2addr 
+# eth3addr 
+# eth4addr 
+# eth5addr 
+# ethaddr 
+#**************************************************************************
+unitcode=f9fc
+project=evalp2040
+blade=1
+#************ Change IP information if needed *****************************
+ipaddr=192.168.1.1
+gatewayip=0.0.0.0
+netmask=255.255.255.252
+#************ Server IP for tftpboot (installation) ***********************
+serverip=192.168.1.2
+tftpdir=.
+tftpcmd=tftpboot
+#**************************************************************************
+anamode=0
+bank=0
+bootrst=1000
+ethprime=FM1@DTSEC5
+ethact=FM1@DTSEC5
+netdev=eth4
+consoledev=ttyS0
+stderr=serial
+stdin=serial
+stdout=serial
+root_image=fss-image-full-${project}.tar.gz
+initramfs=initramfs_uImage
+devicetree=${project}.dtb
+kernel=uImage
+kerneladdr=01400000
+fdtaddr=2000000
+fileaddr=7000000
+cplddbg=0
+ethdebug=0
+fman_ucode=fbf40000
+fpcnfmd=0
+fpcnftyp=0
+fpgacnfdir=/fpgarom/
+fpgaskip=0
+fpgmode=1
+failover=0
+fdtfile=devicetree
+hwinitaddr=7000000
+ubootaddr=0xfbf80000
+usb_dr_mode=host
+usb_phy_type=utmi
+pciddbg=0
+prtctaddr=f8000000
+sysinstall=0
+ipinfo=${ipaddr}:${serverip}:${gatewayip}:${netmask}:qceval_47431:eth2:off
+satabootargs0=setenv bootargs root=/dev/sda5 rw console=ttyS0,115200 maxcpus=4 l2bank=1 ip=${ipaddr}:${serverip}:${gatewayip}:${netmask}:qceval_47431:eth4:off unitCode=${unitcode} 
+satabootargs1=setenv bootargs root=/dev/sda6 rw console=ttyS0,115200 maxcpus=4 l2bank=1 ip=${ipaddr}:${serverip}:${gatewayip}:${netmask}:qceval_47431:eth4:off unitCode=${unitcode} 
+sataboot0=run satabootargs0; usb start; ext2load usb 0:1 ${kerneladdr} ${kernel}; ext2load usb 0:1 ${fdtaddr} ${project}.dtb; bootm ${kerneladdr} - ${fdtaddr}
+sataboot1=run satabootargs1; usb start; ext2load usb 0:2 ${kerneladdr} ${kernel}; ext2load usb 0:2 ${fdtaddr} ${project}.dtb; bootm ${kerneladdr} - ${fdtaddr}
+setenv tftpinfo "initramfs=install tftpdir=${tftpdir} root_image=${root_image}"
+setenv installbootargs 'setenv bootargs "root=/dev/ram rw console=ttyS0,115200 maxcpus=4 ip=${ipaddr}:${serverip}:${gatewayip}:${netmask}:qceval_47431:eth4:off initramfs=install tftpdir=${tftpdir} root_image=${root_image} serverip=${serverip} unitCode=${unitcode} "'
+setenv installboot "run installbootargs; setenv bank 0; saveenv; ${tftpcmd} ${fdtaddr} ${devicetree}; ${tftpcmd} ${kerneladdr} ${kernel}; ${tftpcmd} ${fileaddr} ${initramfs}; bootm ${kerneladdr} ${fileaddr} ${fdtaddr} "
+bootcmd=run sataboot0
