@@ -1,0 +1,111 @@
+From 027b7d9f4887f47480bbaf906d5b99232bf7f90b Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Tue, 11 Dec 2018 16:29:44 +0800
+Subject: [PATCH] remove retry messages while retrying i2c interface
+ 1.Accton524: /var/log quickly becomes 100% 2.add mutex unlock when return
+ error case.
+
+---
+ drivers/misc/accton_t600_fj_mdec.c | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index 879a719..a3779ed 100644
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -266,6 +266,7 @@ static u32 mdio_access(struct device* dev, u32 mode, u32 page, u32 address, u32
+         }
+         else
+         {
++            mutex_unlock(&fpga_dev->driver_lock);
+             return  - EINVAL;   
+         }    
+     }
+@@ -288,6 +289,7 @@ MDIO_READ_BEGIN:
+         }
+         else
+         {
++            mutex_unlock(&fpga_dev->driver_lock);
+             return  - EINVAL;   
+         }
+         
+@@ -319,7 +321,9 @@ MDIO_READ_BEGIN:
+             {
+                 goto MDIO_READ_BEGIN;   
+             }
++#if 0
+             printk(KERN_DEBUG "[DEBUG] I2C bus busy, 1retry count =%d\r\n", i);
++#endif
+         }   
+         // Read data
+         status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_BUS_MDIO_RD_DT);
+@@ -418,7 +422,9 @@ static ssize_t qsfp_action_store(struct device* dev, struct device_attribute* at
+     else
+     {
+         qsfp_read_result_data = read_port_eeprom_one_byte(fpga_dev, port, address);
++#if 0
+         printk(KERN_DEBUG "[DEBUG] READ - I2C_READ_DT = %02x\n", qsfp_read_result_data);
++#endif
+     }
+ 
+ 
+@@ -701,10 +707,12 @@ static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8
+         {
+             printk(KERN_ERR "I2C bus is busy, retry 200 timeout \r\n");
+         }
++#if 0
+         else
+         {
+             printk(KERN_DEBUG "[DEBUG] I2C bus is busy, retry count =%d\r\n", i + 1);
+         }
++#endif
+     }
+ 
+     for(i = 0; i < I2C_READ_STATUS_RETRY_COUNT ; i++)
+@@ -727,10 +735,12 @@ static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8
+         {
+             printk(KERN_ERR "check - I2C_IRQ_ERR_HL status is err, retry 3 timeout \r\n");
+         }
++#if 0
+         else
+         {
+             printk(KERN_DEBUG "[DEBUG] check - I2C_IRQ_ERR_HL status is err, retry count =%d\r\n", i+1);
+         }
++#endif
+     }
+ }
+ 
+@@ -765,7 +775,9 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+             break;
+         }
+         udelay(200);
++#if 0
+         printk(KERN_DEBUG "[DEBUG] I2C bus busy, 2retry count =%d\r\n", i + 1);
++#endif
+     }
+         
+     for(i = 0; i < I2C_READ_STATUS_RETRY_COUNT ; i++)
+@@ -785,7 +797,9 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+                 // NOT BUSY
+                 break;
+             }
++#if 0
+             printk(KERN_DEBUG "[DEBUG] I2C bus busy, 3retry count =%d\r\n", j);
++#endif
+         }
+ 
+         status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_IRQ_ERR_HL + (port << 16)); //0x00An0120, n means port
+@@ -793,8 +807,9 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+         {
+             break;  
+         }
+-
++#if 0
+         printk(KERN_DEBUG "[DEBUG] check - I2C_IRQ_ERR_HL status = %08x(Err), count = %d\n", status, i+1);
++#endif
+     }
+     
+     value = (u8)t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_READ_DT + (port << 16)); //0x00An0144, n means port
+-- 
+1.9.1
+

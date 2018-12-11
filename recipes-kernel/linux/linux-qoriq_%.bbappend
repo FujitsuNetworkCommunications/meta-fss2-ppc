@@ -45,6 +45,8 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0021-add-protection-for-multi-processes-access-the-MDEC.patch    \
                         file://${MACHINE}/patches/0022-fix-2-sfp-bug.patch                                         \
                         file://${MACHINE}/patches/0023-workaround-for-hard-reset-in-R0A-blade.patch                \
+                        file://${MACHINE}/patches/0024-add-code-to-find-the-pci-parent-resource.patch              \
+                        file://${MACHINE}/patches/0025-remove-retry-messages-while-retrying-i2c-interface.patch    \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
