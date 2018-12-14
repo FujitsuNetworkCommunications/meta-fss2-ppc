@@ -43,6 +43,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0019-support-power-off-function.patch                            \
                         file://${MACHINE}/patches/0020-remove-packet-FCS-4-bytes-come-from-BCM5389.patch           \
                         file://${MACHINE}/patches/0021-add-protection-for-multi-processes-access-the-MDEC.patch    \
+                        file://${MACHINE}/patches/0022-support-LM75-on-the-PIU.patch                               \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
