@@ -1,0 +1,104 @@
+From 7fceea1177fed0b6fb3ebfebd6001b1531700a63 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 14 Nov 2018 20:22:35 +0800
+Subject: [PATCH] fix 2 sfp bug 1. Modify sfp power bit by
+ T600_CPLD_Spec_V08_P20181113, the old spec is reverted 2. only init QSFP
+ ports on the PIU/MDEC device when linux probes the PCI device
+
+---
+ drivers/hwmon/accton_t600_cpld.c   |  6 +++---
+ drivers/misc/accton_t600_fj_mdec.c | 38 +++++++++++++++++++++++---------------
+ 2 files changed, 26 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index cede33c..bac97d5 100644
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -619,12 +619,12 @@ static ssize_t set_sfp_power(struct device *dev, struct device_attribute *da,
+     }
+ 
+     switch (attr->index) {
+-        case SFP1_PWR:  /* BIT_1 SFP1_PWR BIT_2 SFP2_PWR */
++        case SFP1_PWR:  /* BIT_1 SFP2_PWR BIT_2 SFP1_PWR */
+         case SFP2_PWR:
+             if (attr->index - SFP1_PWR)
+-                mask = 0x04;
+-            else
+                 mask = 0x02;
++            else
++                mask = 0x04;
+             reg = SFP_PWR_REG;
+             break;
+ 
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index b336240..879a719 100644
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -91,6 +91,10 @@
+ #define PORT12_HEX                                              0x0b
+ #define POS_127_HEX                                             0x7F
+ 
++#define PCI_DEVICE_ID_CDEC                                      0x0000
++#define PCI_DEVICE_ID_MDEC                                      0x0002
++#define PCI_DEVICE_ID_MBCNT                                     0x0021
++
+ enum fpga_register_map
+ {
+     // CPLD VERSION
+@@ -965,20 +969,24 @@ static int accton_fpga_probe(struct pci_dev* pdev, const struct pci_device_id* d
+         goto err_out_free;
+     }
+ 
+-    /* T600 QSFP I2c access does not conflict. Set ModSelL. Always set ModSelL to 1.
+-        Address is 0x00An0024. Port1:n=0x0~Port12:n=0xB */
+-    for(i = 0; i < 12 ; i++)
++
++    if(PCI_DEVICE_ID_MDEC == pdev->device)
+     {
+-        t600_fj_mdec_write32(0x1, fpga_dev->hw_addr + HW_ModSelL + (i << 16));
+-    }
++        /* T600 QSFP I2c access does not conflict. Set ModSelL. Always set ModSelL to 1.
++            Address is 0x00An0024. Port1:n=0x0~Port12:n=0xB */
++        for(i = 0; i < 12 ; i++)
++        {
++            t600_fj_mdec_write32(0x1, fpga_dev->hw_addr + HW_ModSelL + (i << 16));
++        }
+ 
+-    /* Power on all port.
+-       0: Power OFF(default)
+-       1: Power ON
+-       [0]: Port1 ~ [5]: Port6
+-       [8]: Port7 ~ [13]: Port12
+-    */
+-    t600_fj_mdec_write32(0x00003F3F, fpga_dev->hw_addr + HW_VCC);
++        /* Power on all port.
++           0: Power OFF(default)
++           1: Power ON
++           [0]: Port1 ~ [5]: Port6
++           [8]: Port7 ~ [13]: Port12
++        */
++        t600_fj_mdec_write32(0x00003F3F, fpga_dev->hw_addr + HW_VCC);
++    }
+ 
+     rc = sysfs_create_group(&pdev->dev.kobj, &sysfs_group);
+     if(rc)
+@@ -1022,13 +1030,13 @@ static void accton_fpga_remove(struct pci_dev* pdev)
+ static const struct pci_device_id accton_fpga_tbl[] = 
+ {
+     {
+-        0x10CF, 0x0000, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0
++        0x10CF, PCI_DEVICE_ID_CDEC, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0
+     } ,
+     {
+-        0x10CF, 0x0021, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0
++        0x10CF, PCI_DEVICE_ID_MBCNT, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0
+     } , 
+     {
+-        0x10CF, 0x0002, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0
++        0x10CF, PCI_DEVICE_ID_MDEC, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0
+     } ,
+     /* Required last entry. */
+     {
+-- 
+1.9.1
+
