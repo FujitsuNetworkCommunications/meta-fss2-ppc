@@ -1,0 +1,27 @@
+From 259dc2387e599a1510e1cc98090b27ed6bee35e5 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Mon, 3 Dec 2018 20:53:36 +0800
+Subject: [PATCH] add code to find the pci parent resource. ACCTON-313: PIU
+ cannot bring up when PIU is inserted during power on Blade.
+
+---
+ drivers/pci/setup-res.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/pci/setup-res.c b/drivers/pci/setup-res.c
+index 07f2edd..b7f3b0f 100644
+--- a/drivers/pci/setup-res.c
++++ b/drivers/pci/setup-res.c
+@@ -336,6 +336,9 @@ int pci_enable_resources(struct pci_dev *dev, int mask)
+ 				(!(r->flags & IORESOURCE_ROM_ENABLE)))
+ 			continue;
+ 
++		if (!r->parent)
++			r->parent = pci_find_parent_resource(dev, r);
++
+ 		if (!r->parent) {
+ 			dev_err(&dev->dev, "device not available "
+ 				"(can't reserve %pR)\n", r);
+-- 
+1.9.1
+
