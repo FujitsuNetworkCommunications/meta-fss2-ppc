@@ -50,6 +50,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0026-support-LM75-on-the-PIU.patch                               \
                         file://${MACHINE}/patches/0027-ACCTON-550-change-udelay-to-usleep-for-improving-the.patch  \
                         file://${MACHINE}/patches/0028-ACCTON-538-Re-PM-validity-of-NW-port-EQPT-PM-is-some.patch  \
+                        file://${MACHINE}/patches/0029-ACCTON-379-Blade-cannot-start-up-by-Time-has-been-ch.patch  \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
