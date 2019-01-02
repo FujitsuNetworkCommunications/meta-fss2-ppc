@@ -176,6 +176,10 @@
 						compatible = "at24,24c02";
 						reg = <0x50>;
 					};
+					DPS_850AB@58 {
+						compatible = "dps_800ab_16_d";
+						reg = <0x58>;
+					};
 				};
 
 				i2c@1 {
@@ -186,6 +190,10 @@
 					eeprom@52 {
 						compatible = "at24,24c02";
 						reg = <0x52>;
+					};
+					DPS_850AB@5a {
+						compatible = "dps_800ab_16_d";
+						reg = <0x5a>;
 					};
 				};
 
