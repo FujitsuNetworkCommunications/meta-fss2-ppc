@@ -1,0 +1,119 @@
+From 3c9845156b3316622aa4b2ce19886083611e81ce Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 16 Jan 2019 00:17:51 +0800
+Subject: [PATCH] ACCTON-683:Remove/Insert PIU slot1 or slot2 doesn't actuated
+ under full configuration Add fan_piuX_thermal_enable attribute. Driver will
+ stop poll thermal from PIU when user disable this attribute.
+
+---
+ drivers/hwmon/accton_t600_fan.c | 49 +++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 49 insertions(+)
+
+diff --git a/drivers/hwmon/accton_t600_fan.c b/drivers/hwmon/accton_t600_fan.c
+index 05fdb5a..32e91a95 100644
+--- a/drivers/hwmon/accton_t600_fan.c
++++ b/drivers/hwmon/accton_t600_fan.c
+@@ -202,6 +202,8 @@ struct t600_fan_data {
+     struct completion   fanctrl_suspend;
+     u8  fanctrl_disabled;
+     int temp_input[NUM_OF_THERMAL_SENSOR];  /* The temperature read from thermal sensor(lm75) */
++    int piu1_enable;
++    int piu2_enable;
+ #endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
+ };
+ 
+@@ -260,6 +262,8 @@ enum sysfs_fan_attributes {
+     FAN_DIRECTION_ATTR_ID(5),
+ #if (ENABLE_FAN_CTRL_ROUTINE == 1)
+     FAN_DISABLE_FANCTRL,
++    FAN_PIU1_THERMAL_ENABLE,
++    FAN_PIU2_THERMAL_ENABLE,
+ #endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
+ };
+ 
+@@ -267,9 +271,12 @@ enum sysfs_fan_attributes {
+ #if (ENABLE_FAN_CTRL_ROUTINE == 1)
+ static ssize_t show_fan_ctrl_routine(struct device *dev, struct device_attribute *da, char *buf);
+ static ssize_t disable_fan_ctrl_routine(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++static ssize_t piu_thermal_enable(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
+ 
+ static SENSOR_DEVICE_ATTR(fan_disable_fanctrl, S_IWUSR | S_IRUGO, show_fan_ctrl_routine,
+ 										   disable_fan_ctrl_routine, FAN_DISABLE_FANCTRL);
++static SENSOR_DEVICE_ATTR(fan_piu1_thermal_enable, S_IWUSR, NULL, piu_thermal_enable, FAN_PIU1_THERMAL_ENABLE);
++static SENSOR_DEVICE_ATTR(fan_piu2_thermal_enable, S_IWUSR, NULL, piu_thermal_enable, FAN_PIU2_THERMAL_ENABLE);
+ #endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
+ 
+ #define DECLARE_FAN_FAULT_SENSOR_DEV_ATTR(index) \
+@@ -370,6 +377,8 @@ static struct attribute *t600_fan_attributes[] = {
+     DECLARE_FAN_PRESENT_ATTR(5),
+ #if (ENABLE_FAN_CTRL_ROUTINE == 1)
+     &sensor_dev_attr_fan_disable_fanctrl.dev_attr.attr,
++    &sensor_dev_attr_fan_piu1_thermal_enable.dev_attr.attr,
++    &sensor_dev_attr_fan_piu2_thermal_enable.dev_attr.attr,
+ #endif
+     NULL
+ };
+@@ -735,6 +744,34 @@ static ssize_t disable_fan_ctrl_routine(struct device *dev, struct device_attrib
+ 	return count;
+ }
+ 
++static ssize_t piu_thermal_enable(struct device *dev, struct device_attribute *da,
++			const char *buf, size_t count)
++{
++	int error, value;
++	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++	struct i2c_client *client = to_i2c_client(dev);
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++
++	error = kstrtoint(buf, 10, &value);
++	if (error) {
++		return error;
++	}
++
++	switch(attr->index)
++	{
++		case FAN_PIU1_THERMAL_ENABLE:
++			data->piu1_enable= value;
++			break;
++		case FAN_PIU2_THERMAL_ENABLE:
++			data->piu2_enable = value;
++			break;
++		default:
++			break;
++    }
++
++	return count;
++}
++
+ static int read_file_contents(char *path, char *buf, long data_len, struct device *dev)
+ {
+ 	int status, retry = I2C_RW_RETRY_COUNT;
+@@ -769,6 +806,16 @@ static struct t600_fan_data *t600_fan_update_temperature(struct device *dev)
+ 	/* Update temperature
+ 	 */
+ 	for (i = 0; i < NUM_OF_THERMAL_SENSOR; i++) {
++		if ((i >= 3) && (i <= 4)){
++			if((data->piu1_enable == 0)){
++				continue;
++			}
++		}else if((i >= 5) && (i <= 6)){
++			if((data->piu2_enable == 0)){
++				continue;
++			}
++		}
++
+ 		if (read_file_contents(thermal_sensor_path[i], temp[i], sizeof(temp[i]), &client->dev) == 0) {
+ 			temp[i][sizeof(temp[i])-1] = '\0';
+ 
+@@ -973,6 +1020,8 @@ static int t600_fan_probe(struct i2c_client *client,
+     /* initialize fan speed control routine */
+     init_completion(&data->fanctrl_update_stop);
+     init_completion(&data->fanctrl_suspend);
++    data->piu1_enable = 0;
++    data->piu2_enable = 0;
+     data->fanctrl_disabled = 0;
+     data->fanctrl_tsk = kthread_run(fan_speed_ctrl_routine, client, "accton_t600_fanctl");
+ 
+-- 
+1.9.1
+
