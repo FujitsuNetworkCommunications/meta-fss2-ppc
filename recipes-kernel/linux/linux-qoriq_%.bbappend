@@ -53,6 +53,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0029-ACCTON-379-Blade-cannot-start-up-by-Time-has-been-ch.patch  \
                         file://${MACHINE}/patches/0030-ACCTON-537-OC-Unable-generate-about-PSU-failure-alar.patch  \
                         file://${MACHINE}/patches/0031-support-psu-status-input-byte.patch                         \
+                        file://${MACHINE}/patches/0032-ACCTON-683-Remove-Insert-PIU-slot1-or-slot2-doesn-t-.patch  \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
