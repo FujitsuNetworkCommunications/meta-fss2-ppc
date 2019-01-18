@@ -54,6 +54,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0030-ACCTON-537-OC-Unable-generate-about-PSU-failure-alar.patch  \
                         file://${MACHINE}/patches/0031-support-psu-status-input-byte.patch                         \
                         file://${MACHINE}/patches/0032-ACCTON-683-Remove-Insert-PIU-slot1-or-slot2-doesn-t-.patch  \
+                        file://${MACHINE}/patches/0033-support_otp_shutdown_blade.patch                            \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
