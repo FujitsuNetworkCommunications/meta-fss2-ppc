@@ -56,6 +56,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0032-ACCTON-683-Remove-Insert-PIU-slot1-or-slot2-doesn-t-.patch  \
                         file://${MACHINE}/patches/0033-support_otp_shutdown_blade.patch                            \
                         file://${MACHINE}/patches/0034-ACCTON-715-IQT-6-PIU-equipmentRemoved-happened-after.patch  \
+                        file://${MACHINE}/patches/0035-ACCTON-706-LED-control-does-not-work-on-FAN-slot.patch      \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
