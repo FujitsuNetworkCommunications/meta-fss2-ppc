@@ -1,0 +1,149 @@
+From 824b6709efde943dc1f7569b17834c62aa7a7904 Mon Sep 17 00:00:00 2001
+From: linpower <linpower@edge-core.com>
+Date: Wed, 13 Feb 2019 09:46:20 +0800
+Subject: [PATCH 1/1] 1. Because TCP need use packet buffer for retransmission,
+ we need restore packet to original, remove add brcm tag and FCS
+
+---
+ drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c | 97 ++++++++++++++++++++++++
+ 1 file changed, 97 insertions(+)
+
+diff --git a/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c b/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c
+index c45f10a..7aacd57 100755
+--- a/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c
++++ b/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c
+@@ -276,6 +276,85 @@ int dpa_append_bcm_tag_buffer(unsigned char* src, unsigned char* dst, int length
+ 
+ }
+ 
++void dpa_remove_bcm_tag_nonlinear(struct sk_buff *skb, struct net_device *net_dev)
++{
++    int len_new=0;
++    int length= skb->len;
++    int needed=sizeof(struct brcm_tag)+BRCM_FCS_SIZE;  
++    void *new_data=NULL;
++    void *data=NULL;
++    /*BPDU header*/
++    int ret;
++
++    new_data= kmalloc(CONFIG_FSL_FM_MAX_FRAME_SIZE,GFP_KERNEL);
++    if(new_data==NULL)         return;
++
++    memset(new_data,0,CONFIG_FSL_FM_MAX_FRAME_SIZE);
++
++    data= kmalloc(CONFIG_FSL_FM_MAX_FRAME_SIZE,GFP_KERNEL);
++    if(data==0)         
++    {
++        //dpa_buffer_free(pool_id1);
++        kfree(new_data);
++        return;
++    }
++    memset(data,0,CONFIG_FSL_FM_MAX_FRAME_SIZE);
++    
++#if 1    
++    ret = skb_copy_bits(skb,0,new_data,length);
++
++    if(ret!=0){
++        kfree(new_data);
++        kfree(data);        
++        return;
++    }
++    
++    memcpy(data,new_data,12);
++    memcpy(data+12,new_data+12+sizeof(struct brcm_tag),length-needed-12);
++    
++    len_new = length-10;
++
++    skb->len = length-needed;
++    skb->tail = skb->tail-(needed);
++    
++    dpa_append_buffer_to_skb(skb,data,len_new);    
++#endif
++
++    kfree(new_data);
++    kfree(data);
++
++    return;
++}
++
++
++void dpa_remove_bcm_tag_tx(struct sk_buff *skb, struct net_device *net_dev)
++{
++    	int needed=sizeof(struct brcm_tag)+BRCM_FCS_SIZE;
++       int length= skb->len;
++       void *new_data;
++
++       if(skb_is_nonlinear(skb)==1){
++            dpa_remove_bcm_tag_nonlinear(skb,net_dev);
++       }
++       new_data = kmalloc(CONFIG_FSL_FM_MAX_FRAME_SIZE,GFP_KERNEL);
++       if(new_data==NULL)         return;
++
++       memset(new_data,0,CONFIG_FSL_FM_MAX_FRAME_SIZE);        
++       memcpy(new_data,skb->data,12);
++	/*Skip COPY brcm_tag*/
++       memcpy(new_data+12,skb->data+12+sizeof(struct brcm_tag),length-needed-12);
++    
++       memcpy(skb->data,new_data,length-needed);
++    
++       skb->len = length-needed;
++       skb->tail = skb->tail-(needed);
++    
++       kfree(new_data);
++
++       return;
++}
++
++
+ void dpa_append_bcm_tag_nonlinear(struct sk_buff *skb, struct net_device *net_dev)
+ {
+     int len_new=0;
+@@ -1335,6 +1414,10 @@ int __hot dpa_tx(struct sk_buff *skb, struct net_device *net_dev)
+ 
+ 			skb_new = skb_realloc_headroom(skb, priv->tx_headroom);
+ 			if (unlikely(!skb_new)) {
++				if(strcmp(net_dev->name,CPU_PORT_INTERFACE)==0||strcmp(net_dev->name,CPU_PORT_INTERFACE2)==0)
++				{           
++					dpa_remove_bcm_tag_tx(skb,net_dev);
++				}                           
+ 				dev_kfree_skb(skb);
+ 				percpu_stats->tx_errors++;
+ 				return NETDEV_TX_OK;
+@@ -1387,6 +1470,11 @@ int __hot dpa_tx(struct sk_buff *skb, struct net_device *net_dev)
+ 		goto xmit_failed;
+ 
+ 	net_dev->trans_start = jiffies;
++	if(strcmp(net_dev->name,CPU_PORT_INTERFACE)==0||strcmp(net_dev->name,CPU_PORT_INTERFACE2)==0)
++	{           
++		dpa_remove_bcm_tag_tx(skb,net_dev);
++	}
++       
+ 	return NETDEV_TX_OK;
+ 
+ xmit_failed:
+@@ -1395,6 +1483,11 @@ xmit_failed:
+ 		percpu_priv->tx_returned--;
+ 		dpa_fd_release(net_dev, &fd);
+ 		percpu_stats->tx_errors++;
++		/*we need restore clone nskb*/
++		if(strcmp(net_dev->name,CPU_PORT_INTERFACE)==0||strcmp(net_dev->name,CPU_PORT_INTERFACE2)==0)
++		{           
++			dpa_remove_bcm_tag_tx(skb,net_dev);
++		}              
+ 		return NETDEV_TX_OK;
+ 	}
+ 	_dpa_cleanup_tx_fd(priv, &fd);
+@@ -1402,6 +1495,10 @@ skb_to_fd_failed:
+ enomem:
+ 	percpu_stats->tx_errors++;
+ 	dev_kfree_skb(skb);
++	if(strcmp(net_dev->name,CPU_PORT_INTERFACE)==0||strcmp(net_dev->name,CPU_PORT_INTERFACE2)==0)
++	{           
++		dpa_remove_bcm_tag_tx(skb,net_dev);
++	}
+ 	return NETDEV_TX_OK;
+ }
+ 
+-- 
+1.9.1
+
