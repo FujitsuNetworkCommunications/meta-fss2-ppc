@@ -59,6 +59,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0035-ACCTON-706-LED-control-does-not-work-on-FAN-slot.patch      \
                         file://${MACHINE}/patches/0036-ACCTON-624-Consider-to-avoid-FPA-python-freeze-probl.patch  \
                         file://${MACHINE}/patches/0037-Because-TCP-need-use-packet-buffer-for-retransmis.patch     \
+                        file://${MACHINE}/patches/0038-fix-some-minor-issues.patch                                 \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
