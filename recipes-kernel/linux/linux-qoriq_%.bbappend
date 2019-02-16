@@ -61,6 +61,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0037-Because-TCP-need-use-packet-buffer-for-retransmis.patch     \
                         file://${MACHINE}/patches/0038-fix-some-minor-issues.patch                                 \
                         file://${MACHINE}/patches/0039-ACCTON-727-continued-fix-dpa-tx-err-hand.patch              \
+                        file://${MACHINE}/patches/0040-ACCTON-727-fix_incomplete_patch-dpa-tx-err-hand-.patch      \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
@@ -100,4 +101,4 @@ do_deploy_append () {
    done
 }
 
-PR := "${PR}.2"
+PR := "${PR}.3"
