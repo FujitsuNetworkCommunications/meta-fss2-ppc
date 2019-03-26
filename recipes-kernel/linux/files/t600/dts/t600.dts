@@ -80,6 +80,8 @@
 		};
 
 		fm1mac6: ethernet@ea000 {
+			phy-handle = <&sgmii_phy1>;
+			phy-connection-type = "sgmii";
 		};
 
 		fm1mac9: ethernet@f0000 { /* 10GEC1 */
@@ -98,6 +100,9 @@
 			};
 			rgmii_phy2: ethernet-phy@2 {
 				reg = <0x2>;
+			};
+			sgmii_phy1: ethernet-phy@3 {
+				reg = <0x1>;
 			};
 		};
 
