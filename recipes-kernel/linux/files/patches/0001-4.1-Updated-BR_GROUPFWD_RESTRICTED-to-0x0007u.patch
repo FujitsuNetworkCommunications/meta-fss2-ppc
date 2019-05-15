@@ -1,0 +1,25 @@
+From a685c3ad13532b3084d25e74f5e29f00d3d50060 Mon Sep 17 00:00:00 2001
+From: "Barlow, Terry" <Terry.Barlow@us.fujitsu.com>
+Date: Fri, 18 Jan 2019 13:28:35 -0600
+Subject: [PATCH] 4.1-Updated-BR_GROUPFWD_RESTRICTED-to-0x0007u
+
+---
+ net/bridge/br_private.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/bridge/br_private.h b/net/bridge/br_private.h
+index 3362c29..5cc900a 100644
+--- a/net/bridge/br_private.h
++++ b/net/bridge/br_private.h
+@@ -34,7 +34,7 @@
+ /* Control of forwarding link local multicast */
+ #define BR_GROUPFWD_DEFAULT	0
+ /* Don't allow forwarding control protocols like STP and LLDP */
+-#define BR_GROUPFWD_RESTRICTED	0x4007u
++#define BR_GROUPFWD_RESTRICTED	0x0007u
+ /* The Nearest Customer Bridge Group Address, 01-80-C2-00-00-[00,0B,0C,0D,0F] */
+ #define BR_GROUPFWD_8021AD	0xB801u
+ 
+-- 
+1.8.3.1
+
