@@ -1,0 +1,39 @@
+From 4c8123181d692c5b78650ee559f3d970440c9399 Mon Sep 17 00:00:00 2001
+From: Stephen Rothwell <sfr@canb.auug.org.au>
+Date: Thu, 8 Oct 2015 10:28:28 +1100
+Subject: [PATCH] powerpc: discard .exit.data at runtime
+
+.exit.text is discarded at run time and there are some references from
+that to .exit.data, so we need to discard .exit.data at run time as well.
+
+Fixes these errors:
+
+`.exit.data' referenced in section `.exit.text' of drivers/built-in.o: defined in discarded section `.exit.data' of drivers/built-in.o
+`.exit.data' referenced in section `.exit.text' of drivers/built-in.o: defined in discarded section `.exit.data' of drivers/built-in.o
+
+Signed-off-by: Stephen Rothwell <sfr@canb.auug.org.au>
+Signed-off-by: Michael Ellerman <mpe@ellerman.id.au>
+---
+ arch/powerpc/kernel/vmlinux.lds.S | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/powerpc/kernel/vmlinux.lds.S b/arch/powerpc/kernel/vmlinux.lds.S
+index 1db6851..d41fd0a 100644
+--- a/arch/powerpc/kernel/vmlinux.lds.S
++++ b/arch/powerpc/kernel/vmlinux.lds.S
+@@ -183,6 +183,12 @@ SECTIONS
+ 		*(.rela*)
+ 	}
+ #endif
++	/* .exit.data is discarded at runtime, not link time,
++	 * to deal with references from .exit.text
++	 */
++	.exit.data : AT(ADDR(.exit.data) - LOAD_OFFSET) {
++		EXIT_DATA
++	}
+ 
+ 	/* freed after init ends here */
+ 	. = ALIGN(PAGE_SIZE);
+-- 
+1.8.3.1
+

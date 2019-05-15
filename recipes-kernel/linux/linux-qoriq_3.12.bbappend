@@ -18,14 +18,17 @@ python () {
 }
 
 FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
-SRC_URI += "file://${MACHINE}/dts                     \
-            file://${MACHINE}/kconfig                 \
+
+SRC_URI += "file://${MACHINE}/dts \
+            file://${MACHINE}/kconfig \
+            file://netfilter.cfg \
                   "
 
-SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-linux-3.12.patch     \
-                        file://${MACHINE}/patches/0002-Chage-to-fit-T600-NOR-flash-partition.patch  \
-                        file://${MACHINE}/patches/0003-add-accton-kernel-driver.patch               \
-                        file://${MACHINE}/patches/0004-update-cpld-fan-and-mdec-driver-base-on-the-new-spec.patch  \
+SRC_URI_append_t600 += "file://patches/0001-Updated-BR_GROUPFWD_RESTRICTED-to-0x0007u.patch \
+                        file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-linux-3.12.patch \
+                        file://${MACHINE}/patches/0002-Chage-to-fit-T600-NOR-flash-partition.patch \
+                        file://${MACHINE}/patches/0003-add-accton-kernel-driver.patch \
+                        file://${MACHINE}/patches/0004-update-cpld-fan-and-mdec-driver-base-on-the-new-spec.patch \
                         file://${MACHINE}/patches/0005-add-brcm-tag-in-TX-remove-brcm-tag-in-RX.patch              \
                         file://${MACHINE}/patches/0006-fix-the-cold-reset-function-with-the-new-SYSTEM-CPLD.patch  \
                         file://${MACHINE}/patches/0007-fix-the-order-of-fan-number-with-the-new-FAN-CPLD.patch     \
@@ -64,21 +67,16 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0001-Backport-PPC64-patch-to-l
                         file://${MACHINE}/patches/0040-ACCTON-727-fix_incomplete_patch-dpa-tx-err-hand-.patch      \
                         file://${MACHINE}/patches/0041-Add-PIU-scan-mutex.-Application-must-use-this-mutex-.patch  \
                         file://${MACHINE}/patches/0042-ACCTON-858-Main-signal-is-down-after-PIU-reseat.patch       \
+                        file://patches/0001-powerpc-discard-.exit.data-at-runtime.patch \
                        "
 
+KERNEL_DEVICETREE = "${MACHINE}.dtb"
 KERNEL_DEFCONFIG  = "${WORKDIR}/kconfig/${MACHINE}_config"
 
-KERNEL_DEVICETREE = "${MACHINE}.dtb"
-
-# Example syntax to add device tree
-# KERNEL_DEVICETREE_t600 = "${MACHINE}.dtb ${MACHINE}-f100.dtb"
-
-# Example syntax to add SCRIPT
-# SCRIPT_SOURCE_l100="${WORKDIR}/${MACHINE}/uboot_scripts/l100-b111-hwinit.scrs"
-
-
-# Example uboot config addition
-# UBOOT_CONFIG_t600="${WORKDIR}/${MACHINE}/uboot_scripts/uboot_env_3b11.txt"
+# meta-enea is bbappending to this recipe and adding 10+ config fragments.
+# Since we currently already include those items in our KERNEL_DEFCONFIG,
+# start the list from scratch and add our fragments.
+DELTA_KERNEL_DEFCONFIG = "${WORKDIR}/netfilter.cfg"
 
 inherit deploy
 
@@ -103,4 +101,4 @@ do_deploy_append () {
    done
 }
 
-PR := "${PR}.3"
+PR := "${PR}.16"
