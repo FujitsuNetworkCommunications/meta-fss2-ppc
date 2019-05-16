@@ -1,0 +1,25 @@
+From 18ca5c04fee5364a6ce37068c9094121c34a9d5b Mon Sep 17 00:00:00 2001
+From: Spoorthi Manjunath <spoorthi.manjunath@us.fujitsu.com>
+Date: Tue, 23 Aug 2016 10:58:26 -0500
+Subject: [PATCH] Updated BR_GROUPFWD_RESTRICTED to 0x0007u
+
+---
+ net/bridge/br_private.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/net/bridge/br_private.h b/net/bridge/br_private.h
+index 711094a..7df4112 100644
+--- a/net/bridge/br_private.h
++++ b/net/bridge/br_private.h
+@@ -32,7 +32,7 @@
+ /* Control of forwarding link local multicast */
+ #define BR_GROUPFWD_DEFAULT	0
+ /* Don't allow forwarding control protocols like STP and LLDP */
+-#define BR_GROUPFWD_RESTRICTED	0x4007u
++#define BR_GROUPFWD_RESTRICTED	0x0007u
+ 
+ /* Path to usermode spanning tree program */
+ #define BR_STP_PROG	"/sbin/bridge-stp"
+-- 
+2.3.4
+
