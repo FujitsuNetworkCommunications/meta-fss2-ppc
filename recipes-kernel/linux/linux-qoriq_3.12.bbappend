@@ -68,6 +68,7 @@ SRC_URI_append_t600 += "file://patches/0001-Updated-BR_GROUPFWD_RESTRICTED-to-0x
                         file://${MACHINE}/patches/0041-Add-PIU-scan-mutex.-Application-must-use-this-mutex-.patch  \
                         file://${MACHINE}/patches/0042-ACCTON-858-Main-signal-is-down-after-PIU-reseat.patch       \
                         file://patches/0001-powerpc-discard-.exit.data-at-runtime.patch \
+                        file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch \
                        "
 
 KERNEL_DEVICETREE = "${MACHINE}.dtb"

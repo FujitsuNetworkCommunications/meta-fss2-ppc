@@ -47,6 +47,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T600-NOR
                         file://${MACHINE}/patches/0038-4.1-fix-some-minor-issues.patch                             \
                         file://${MACHINE}/patches/0039-4.1-ACCTON-727-continued-fix-dpa-tx-err-hand.patch          \
                         file://${MACHINE}/patches/0040-4.1-ACCTON-727-fix_incomplete_patch-dpa-tx-err-hand.patch   \
+                        file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/${MACHINE}/kconfig/${MACHINE}_config"
