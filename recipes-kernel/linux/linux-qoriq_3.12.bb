@@ -11,7 +11,7 @@ SRC_URI = "git://git.freescale.com/ppc/sdk/linux.git;nobranch=1 \
 "
 SRCREV = "6619b8b55796cdf0cec04b66a71288edd3057229"
 PV = "3.12"
-PR = "${INC_PR}.1"
+PR = "${INC_PR}.2"
 
 SCMVERSION ?= "y"
 

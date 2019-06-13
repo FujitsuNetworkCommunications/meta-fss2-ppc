@@ -33,7 +33,6 @@
  */
 
 /include/ "fsl/t208xsi-pre.dtsi"
-/include/ "fsl/t208xrdb.dtsi"
 /include/ "t600.dtsi"
 
 / {
