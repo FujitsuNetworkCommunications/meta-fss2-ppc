@@ -1,0 +1,36 @@
+From 2fd552013721854766bef4ceea09607ba755d761 Mon Sep 17 00:00:00 2001
+From: James Dang <james.dang@us.fujitsu.com>
+Date: Fri, 3 May 2019 15:55:55 -0500
+Subject: [PATCH] 4.1 match 3.12 kernel temperature sysfs
+
+---
+ drivers/hwmon/lm75.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/hwmon/lm75.c b/drivers/hwmon/lm75.c
+index fe41d5a..38f4520 100644
+--- a/drivers/hwmon/lm75.c
++++ b/drivers/hwmon/lm75.c
+@@ -295,6 +295,11 @@ lm75_probe(struct i2c_client *client, const struct i2c_device_id *id)
+ 		lm75_write_value(client, LM75_REG_CONF, new);
+ 	dev_dbg(dev, "Config %02x\n", new);
+ 
++	/* Register sysfs hooks */
++	status = sysfs_create_group(&client->dev.kobj, &lm75_group);
++	if (status)
++		return status;
++
+ 	data->hwmon_dev = hwmon_device_register_with_groups(dev, client->name,
+ 							    data, lm75_groups);
+ 	if (IS_ERR(data->hwmon_dev))
+@@ -318,6 +323,7 @@ static int lm75_remove(struct i2c_client *client)
+ 
+ 	thermal_zone_of_sensor_unregister(data->hwmon_dev, data->tz);
+ 	hwmon_device_unregister(data->hwmon_dev);
++	sysfs_remove_group(&client->dev.kobj, &lm75_group);
+ 	lm75_write_value(client, LM75_REG_CONF, data->orig_conf);
+ 	return 0;
+ }
+-- 
+1.8.3.1
+

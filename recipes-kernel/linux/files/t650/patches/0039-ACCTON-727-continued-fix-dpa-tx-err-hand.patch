@@ -1,0 +1,19 @@
+--- a/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c
++++ b/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c
+@@ -1301,6 +1301,16 @@
+                     kfree_skb(skb);
+                     skb = new_skb;           
+ 		} 
++      else {
++            /*  If fail to copy to new buffer, return here
++             *  so that we don't modify the original packet
++             *  else we will corrupt TCP payload
++             */
++                   net_err_ratelimited("dpa_tx: failed to expand buffer\n");
++                   dev_kfree_skb(skb);
++                   percpu_stats->tx_errors++;
++                   return NETDEV_TX_OK;
++      }
+              
+ 	       if(skb->ip_summed==3) {skb_checksum_help(skb);skb->ip_summed=2;}
+ 		/*dump_packet(skb->data,skb->len+16);*/

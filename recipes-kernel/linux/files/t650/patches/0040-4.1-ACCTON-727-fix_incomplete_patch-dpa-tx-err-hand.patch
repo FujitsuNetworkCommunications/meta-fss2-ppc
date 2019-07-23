@@ -1,0 +1,40 @@
+From 34a37a7f0108adeb4ee8313708134bba806124a2 Mon Sep 17 00:00:00 2001
+From: "Barlow, Terry" <Terry.Barlow@us.fujitsu.com>
+Date: Sun, 24 Feb 2019 20:29:36 -0600
+Subject: [PATCH] 4.1-ACCTON-727-fix_incomplete_patch-dpa-tx-err-hand
+
+---
+ drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c b/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c
+index 9896137..3c11c59 100644
+--- a/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c
++++ b/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c
+@@ -1492,8 +1492,15 @@ int __hot dpa_tx(struct sk_buff *skb, struct net_device *net_dev)
+ 	const int queue_mapping = dpa_get_queue_mapping(skb);
+ 	struct qman_fq *egress_fq, *conf_fq;
+ 
++	struct dpa_percpu_priv_s *percpu_priv;
++	struct rtnl_link_stats64 *percpu_stats;
+ 
+         struct sk_buff *new_skb=NULL;
++
++	priv = netdev_priv(net_dev);
++	/* Non-migratable context, safe to use __this_cpu_ptr */
++	percpu_priv = this_cpu_ptr(priv->percpu_priv);
++	percpu_stats = &percpu_priv->stats;
+   
+ /* modify by peter, for BCM management tag*/
+ 	/*printk("(%s:%d) net_dev->name:%s, packet len:%d,skb->no_fcs:%d, csum:%08x, ip_summ:%d\n",__FUNCTION__,__LINE__,net_dev->name,skb->len,skb->no_fcs,skb->csum,skb->ip_summed);*/
+@@ -1536,7 +1543,6 @@ int __hot dpa_tx(struct sk_buff *skb, struct net_device *net_dev)
+ 		return NETDEV_TX_OK;
+ #endif
+ 
+-	priv = netdev_priv(net_dev);
+ 
+ #ifdef CONFIG_FSL_DPAA_CEETM
+ 	if (priv->ceetm_en)
+-- 
+1.8.3.1
+

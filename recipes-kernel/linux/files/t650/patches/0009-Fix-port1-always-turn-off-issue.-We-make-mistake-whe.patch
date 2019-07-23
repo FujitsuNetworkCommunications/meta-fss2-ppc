@@ -1,0 +1,61 @@
+From 0946bedcb73ee9f71a50d7638db4cb5a5dd343ab Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Thu, 16 Aug 2018 14:06:47 +0800
+Subject: [PATCH] Fix port1 always turn off issue. We make mistake when setup
+ HW power pin.
+
+---
+ drivers/misc/accton_t600_fj_mdec.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index e877567..279cbf8 100644
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -389,6 +389,7 @@ static ssize_t qsfp_action_store(struct device* dev, struct device_attribute* at
+         return  - EINVAL;
+     }
+     
++    port = port - 1; // application port are 1~12. kernel port are 0~11.
+     mutex_lock(&fpga_dev->driver_lock);
+ 
+ 
+@@ -625,6 +626,8 @@ static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8
+     u32 set_add, set_dt, status;
+     int i;
+ 
++    /* Port number is inversed by mdec. Port1=CL12 */
++    port = 11 - port;
+     for(i = 0; i < I2C_CHK_BUS_BUSY_RETRY_COUNT ; i++)
+     {
+         status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_BUSY + (port << 16)); //0x00An0130, n means port
+@@ -691,6 +694,8 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+     u8 value;
+     int i, j;
+ 
++    /* Port number is inversed by mdec. Port1=CL12 */
++    port = 11 - port;
+     for(i = 0; i < I2C_CHK_BUS_BUSY_RETRY_COUNT ; i++)
+     {
+         status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_BUSY + (port << 16)); //0x00An0130, n means port
+@@ -774,7 +779,7 @@ static SENSOR_DEVICE_ATTR(port8_eeprom_##index, S_IRUGO, read_port_eeprom, NULL,
+ static SENSOR_DEVICE_ATTR(port9_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT9_EEPROM_##index);
+ #define DECLARE_PORT9_EEPROM_ATTR(index) &sensor_dev_attr_port9_eeprom_##index.dev_attr.attr
+ #define DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(index) \
+-static SENSOR_DEVICE_ATTR(port10_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT4_EEPROM_##index);
++static SENSOR_DEVICE_ATTR(port10_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT10_EEPROM_##index);
+ #define DECLARE_PORT10_EEPROM_ATTR(index) &sensor_dev_attr_port10_eeprom_##index.dev_attr.attr
+ #define DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(index) \
+ static SENSOR_DEVICE_ATTR(port11_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT11_EEPROM_##index);
+@@ -910,7 +915,7 @@ static int accton_fpga_probe(struct pci_dev* pdev, const struct pci_device_id* d
+        [0]: Port1 ~ [5]: Port6
+        [8]: Port7 ~ [13]: Port12
+     */
+-    t600_fj_mdec_write32(0x00001F3F, fpga_dev->hw_addr + HW_VCC);
++    t600_fj_mdec_write32(0x00003F3F, fpga_dev->hw_addr + HW_VCC);
+ 
+     rc = sysfs_create_group(&pdev->dev.kobj, &sysfs_group);
+     if(rc)
+-- 
+1.9.1
+
