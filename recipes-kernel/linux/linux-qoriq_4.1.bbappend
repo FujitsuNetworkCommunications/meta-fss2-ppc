@@ -50,6 +50,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T600-NOR
                         file://${MACHINE}/patches/0041-Add-PIU-scan-mutex.-Application-must-use-this-mutex-.patch  \
                         file://${MACHINE}/patches/0042-ACCTON-858-Main-signal-is-down-after-PIU-reseat.patch       \
                         file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch \
+                        file://${MACHINE}/patches/0044-Fan-speed-changes-to-max-automatically.patch \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/${MACHINE}/kconfig/${MACHINE}_config"
