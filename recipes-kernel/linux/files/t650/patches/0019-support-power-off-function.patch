@@ -1,0 +1,116 @@
+From 87f0d34df13b0a865e72093762f4acef41b93426 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Fri, 2 Nov 2018 14:06:54 +0800
+Subject: [PATCH] support power-off function
+
+This modification is for Blade R0B + CPLD V03 and later
+1. implement power-off funciton
+2. modify hard restart function base on the new CPLD version V03
+ACCTON-246: ps_shutdown support for poweroff
+---
+ arch/powerpc/sysdev/fss2_reset.c |  5 ++++-
+ drivers/hwmon/accton_t600_cpld.c | 39 ++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 38 insertions(+), 6 deletions(-)
+
+diff --git a/arch/powerpc/sysdev/fss2_reset.c b/arch/powerpc/sysdev/fss2_reset.c
+index 6208da6..d20e22f 100644
+--- a/arch/powerpc/sysdev/fss2_reset.c
++++ b/arch/powerpc/sysdev/fss2_reset.c
+@@ -44,6 +44,7 @@
+ 
+ #define WARM_RESTART           2
+ #define COLD_RESTART           1
++#define POWER_OFF              0
+ 
+ extern int t600_reset(int reset_type);
+ 
+@@ -78,7 +79,9 @@ EXPORT_SYMBOL(fss2_reset_hard);
+ 
+ void fss2_reset_power_off(void)
+ {
+-	/* Not do anything */
++    int status;
++    status = t600_reset(POWER_OFF);
++    return ;
+ }
+ 
+ EXPORT_SYMBOL(fss2_reset_power_off);
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index c9521af..cede33c 100644
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -47,6 +47,7 @@
+ #define PIU_MGMT_PG_REG             0x21
+ #define SYSTEM_RESET_REG            0x22
+ #define RESET_CONTROL_REG           0x26
++#define OTP_RECORD_REG              0x27
+ #define PIU_THERMAL_CONTROL_REG     0x19
+ 
+ struct t600_cpld_data {
+@@ -296,22 +297,39 @@ static ssize_t reset(struct device *dev, struct device_attribute *da,
+         return status;
+     }
+         
+-    if (reset < 1 || reset > 2) {  /* reset 1: hard reset, 2: warm reset */
++    if (reset < 0 || reset > 2) {  /* reset 1: hard reset, 2: warm reset, 0: power-off */
+         return -EINVAL;
+     }
+ 
+     mutex_lock(&data->update_lock);
+     if (reset == 1) {
+         /* RESET_ALL when SW hard reset */
++
++        /* Set the OTP-record bit2 to 0 (NON-OTP)
++         */
++        status = t600_cpld_read(client, OTP_RECORD_REG);
++        if (unlikely(status < 0)) {
++            goto exit;
++        }
++
++        regval = status & 0xFB;
++        status = t600_cpld_write(client, OTP_RECORD_REG, regval);
++        if (unlikely(status < 0)) {
++            goto exit;
++        }
++
++        /* Set power-cycle bit2 to 1
++         */
++        regval = 0;
+         status = t600_cpld_read(client, SYSTEM_RESET_REG);
+         if (unlikely(status < 0)) {
+             goto exit;
+         }
+ 
+-        regval = status | (0x1 << 0);
+-        status = t600_cpld_write(client, RESET_CONTROL_REG, regval);
++        regval = status | (0x1 << 2);
++        status = t600_cpld_write(client, SYSTEM_RESET_REG, regval);
+     }
+-		else {
++    else if (reset == 2){
+         /* WARM_BOOT when SW warm reset */
+         status = t600_cpld_read(client, SYSTEM_RESET_REG);
+         if (unlikely(status < 0)) {
+@@ -320,7 +338,18 @@ static ssize_t reset(struct device *dev, struct device_attribute *da,
+ 
+         regval = status | (0x1 << 1);
+         status = t600_cpld_write(client, SYSTEM_RESET_REG, regval);
+-		}
++    }
++    else if (reset == 0)
++    {
++        /* POWER-OFF */
++        status = t600_cpld_read(client, SYSTEM_RESET_REG);
++        if (unlikely(status < 0)) {
++            goto exit;
++        }
++
++        regval = status | 0x1;
++        status = t600_cpld_write(client, SYSTEM_RESET_REG, regval);
++    }
+ 
+     if (unlikely(status < 0)) {
+         goto exit;
+-- 
+1.9.1
+

@@ -1,0 +1,174 @@
+From 350bfce0f908f14f2f871cb9485c5f632df9485d Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 23 Jan 2019 19:41:57 +0800
+Subject: [PATCH] ACCTON-715:(IQT#6) PIU equipmentRemoved happened after PIU
+ replacement
+
+when user inserts the PIU, DHAL tries to init the PIU (fpa_init) and fan-controller also tries to access the MDEC (mdio-access).
+Maybe, it causes the kernel driver (fan controller) accesses the MDEC(MDIO) wrong.
+Now, we use DHAL to update the PIU DSP temperature to fan-controller to avoid DHAL init MDEC and fan-controller access MDEC at the same time.
+---
+ drivers/hwmon/accton_t600_fan.c | 86 ++++++++++++++++++++++++++++-------------
+ 1 file changed, 59 insertions(+), 27 deletions(-)
+
+diff --git a/drivers/hwmon/accton_t600_fan.c b/drivers/hwmon/accton_t600_fan.c
+index 32e91a95..c50f003 100644
+--- a/drivers/hwmon/accton_t600_fan.c
++++ b/drivers/hwmon/accton_t600_fan.c
+@@ -71,10 +71,10 @@ char *thermal_sensor_path[NUM_OF_THERMAL_SENSOR] = {
+ "/sys/bus/i2c/devices/20-0049/temp1_input",
+ "/sys/bus/i2c/devices/21-0049/temp1_input",
+ "/sys/bus/i2c/devices/31-0048/temp1_input",
+-"/sys/bus/pci/devices/0000:03:00.0/temp1_input",
+-"/sys/bus/pci/devices/0000:03:00.0/temp2_input",
+-"/sys/bus/pci/devices/0000:04:00.0/temp1_input",
+-"/sys/bus/pci/devices/0000:04:00.0/temp2_input",
++"none_temp1_input",    /* skip */
++"none_temp1_input",    /* skip */
++"none_temp1_input",    /* skip */
++"none_temp1_input",    /* skip */
+ "/sys/bus/i2c/devices/6-001a/temp1_input"
+ };
+ #else /* simulation */
+@@ -202,8 +202,6 @@ struct t600_fan_data {
+     struct completion   fanctrl_suspend;
+     u8  fanctrl_disabled;
+     int temp_input[NUM_OF_THERMAL_SENSOR];  /* The temperature read from thermal sensor(lm75) */
+-    int piu1_enable;
+-    int piu2_enable;
+ #endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
+ };
+ 
+@@ -262,8 +260,10 @@ enum sysfs_fan_attributes {
+     FAN_DIRECTION_ATTR_ID(5),
+ #if (ENABLE_FAN_CTRL_ROUTINE == 1)
+     FAN_DISABLE_FANCTRL,
+-    FAN_PIU1_THERMAL_ENABLE,
+-    FAN_PIU2_THERMAL_ENABLE,
++    FAN_PIU1_DSP1_THERMAL,
++    FAN_PIU1_DSP2_THERMAL,
++    FAN_PIU2_DSP1_THERMAL,
++    FAN_PIU2_DSP2_THERMAL,
+ #endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
+ };
+ 
+@@ -271,12 +271,16 @@ enum sysfs_fan_attributes {
+ #if (ENABLE_FAN_CTRL_ROUTINE == 1)
+ static ssize_t show_fan_ctrl_routine(struct device *dev, struct device_attribute *da, char *buf);
+ static ssize_t disable_fan_ctrl_routine(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
+-static ssize_t piu_thermal_enable(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++static ssize_t show_piu_dsp_thermal(struct device *dev, struct device_attribute *da, char *buf);
++static ssize_t set_piu_dsp_thermal(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
+ 
+ static SENSOR_DEVICE_ATTR(fan_disable_fanctrl, S_IWUSR | S_IRUGO, show_fan_ctrl_routine,
+ 										   disable_fan_ctrl_routine, FAN_DISABLE_FANCTRL);
+-static SENSOR_DEVICE_ATTR(fan_piu1_thermal_enable, S_IWUSR, NULL, piu_thermal_enable, FAN_PIU1_THERMAL_ENABLE);
+-static SENSOR_DEVICE_ATTR(fan_piu2_thermal_enable, S_IWUSR, NULL, piu_thermal_enable, FAN_PIU2_THERMAL_ENABLE);
++static SENSOR_DEVICE_ATTR(fan_piu1_dsp1_thermal, S_IWUSR | S_IRUGO, show_piu_dsp_thermal, set_piu_dsp_thermal, FAN_PIU1_DSP1_THERMAL);
++static SENSOR_DEVICE_ATTR(fan_piu1_dsp2_thermal, S_IWUSR | S_IRUGO, show_piu_dsp_thermal, set_piu_dsp_thermal, FAN_PIU1_DSP2_THERMAL);
++static SENSOR_DEVICE_ATTR(fan_piu2_dsp1_thermal, S_IWUSR | S_IRUGO, show_piu_dsp_thermal, set_piu_dsp_thermal, FAN_PIU2_DSP1_THERMAL);
++static SENSOR_DEVICE_ATTR(fan_piu2_dsp2_thermal, S_IWUSR | S_IRUGO, show_piu_dsp_thermal, set_piu_dsp_thermal, FAN_PIU2_DSP2_THERMAL);
++
+ #endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
+ 
+ #define DECLARE_FAN_FAULT_SENSOR_DEV_ATTR(index) \
+@@ -377,8 +381,10 @@ static struct attribute *t600_fan_attributes[] = {
+     DECLARE_FAN_PRESENT_ATTR(5),
+ #if (ENABLE_FAN_CTRL_ROUTINE == 1)
+     &sensor_dev_attr_fan_disable_fanctrl.dev_attr.attr,
+-    &sensor_dev_attr_fan_piu1_thermal_enable.dev_attr.attr,
+-    &sensor_dev_attr_fan_piu2_thermal_enable.dev_attr.attr,
++    &sensor_dev_attr_fan_piu1_dsp1_thermal.dev_attr.attr,
++    &sensor_dev_attr_fan_piu1_dsp2_thermal.dev_attr.attr,
++    &sensor_dev_attr_fan_piu2_dsp1_thermal.dev_attr.attr,
++    &sensor_dev_attr_fan_piu2_dsp2_thermal.dev_attr.attr,
+ #endif
+     NULL
+ };
+@@ -744,7 +750,35 @@ static ssize_t disable_fan_ctrl_routine(struct device *dev, struct device_attrib
+ 	return count;
+ }
+ 
+-static ssize_t piu_thermal_enable(struct device *dev, struct device_attribute *da,
++static ssize_t show_piu_dsp_thermal(struct device *dev, struct device_attribute *da, char *buf)
++{
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++	struct i2c_client *client = to_i2c_client(dev);
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++    int piu_dsp_temp_input = 0;
++
++	switch(attr->index)
++	{
++		case FAN_PIU1_DSP1_THERMAL:
++			piu_dsp_temp_input = data->temp_input[3];
++			break;
++		case FAN_PIU1_DSP2_THERMAL:
++			piu_dsp_temp_input = data->temp_input[4];
++			break;
++		case FAN_PIU2_DSP1_THERMAL:
++			piu_dsp_temp_input = data->temp_input[5];
++			break;
++		case FAN_PIU2_DSP2_THERMAL:
++			piu_dsp_temp_input = data->temp_input[6];
++			break;
++		default:
++			break;
++    }
++    
++	return sprintf(buf, "%d\n", piu_dsp_temp_input);
++}
++
++static ssize_t set_piu_dsp_thermal(struct device *dev, struct device_attribute *da,
+ 			const char *buf, size_t count)
+ {
+ 	int error, value;
+@@ -759,11 +793,17 @@ static ssize_t piu_thermal_enable(struct device *dev, struct device_attribute *d
+ 
+ 	switch(attr->index)
+ 	{
+-		case FAN_PIU1_THERMAL_ENABLE:
+-			data->piu1_enable= value;
++		case FAN_PIU1_DSP1_THERMAL:
++			data->temp_input[3] = value;
+ 			break;
+-		case FAN_PIU2_THERMAL_ENABLE:
+-			data->piu2_enable = value;
++		case FAN_PIU1_DSP2_THERMAL:
++			data->temp_input[4] = value;
++			break;
++		case FAN_PIU2_DSP1_THERMAL:
++			data->temp_input[5] = value;
++			break;
++		case FAN_PIU2_DSP2_THERMAL:
++			data->temp_input[6] = value;
+ 			break;
+ 		default:
+ 			break;
+@@ -806,14 +846,8 @@ static struct t600_fan_data *t600_fan_update_temperature(struct device *dev)
+ 	/* Update temperature
+ 	 */
+ 	for (i = 0; i < NUM_OF_THERMAL_SENSOR; i++) {
+-		if ((i >= 3) && (i <= 4)){
+-			if((data->piu1_enable == 0)){
++		if ((i >= 3) && (i <= 6)){
+ 				continue;
+-			}
+-		}else if((i >= 5) && (i <= 6)){
+-			if((data->piu2_enable == 0)){
+-				continue;
+-			}
+ 		}
+ 
+ 		if (read_file_contents(thermal_sensor_path[i], temp[i], sizeof(temp[i]), &client->dev) == 0) {
+@@ -1020,8 +1054,6 @@ static int t600_fan_probe(struct i2c_client *client,
+     /* initialize fan speed control routine */
+     init_completion(&data->fanctrl_update_stop);
+     init_completion(&data->fanctrl_suspend);
+-    data->piu1_enable = 0;
+-    data->piu2_enable = 0;
+     data->fanctrl_disabled = 0;
+     data->fanctrl_tsk = kthread_run(fan_speed_ctrl_routine, client, "accton_t600_fanctl");
+ 
+-- 
+1.9.1
+

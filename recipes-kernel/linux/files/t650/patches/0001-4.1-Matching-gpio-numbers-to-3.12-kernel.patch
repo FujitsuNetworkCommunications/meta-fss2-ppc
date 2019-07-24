@@ -1,0 +1,25 @@
+From ffc96d6f83f53ce21074f67ac08e516f1cd142f6 Mon Sep 17 00:00:00 2001
+From: James Dang <james.dang@us.fujitsu.com>
+Date: Wed, 1 May 2019 15:52:40 -0500
+Subject: [PATCH] 4.1 Matching gpio numbers to 3.12 kernel
+
+---
+ include/asm-generic/gpio.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/asm-generic/gpio.h b/include/asm-generic/gpio.h
+index 9bb0d11..e6ca118 100644
+--- a/include/asm-generic/gpio.h
++++ b/include/asm-generic/gpio.h
+@@ -26,7 +26,7 @@
+  */
+ 
+ #ifndef ARCH_NR_GPIOS
+-#define ARCH_NR_GPIOS		512
++#define ARCH_NR_GPIOS		256
+ #endif
+ 
+ /*
+-- 
+1.8.3.1
+

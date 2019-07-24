@@ -1,0 +1,31 @@
+From 19b446fccc32b80aa2727261a5fc6c80cf2b5fab Mon Sep 17 00:00:00 2001
+From: nmahaba <niranjan.mahabaleshwar@us.fujitsu.com>
+Date: Wed, 6 Feb 2019 22:00:37 -0600
+Subject: [PATCH] PF-6394 New MMC Flash
+
+---
+ drivers/mmc/core/mmc.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/mmc/core/mmc.c b/drivers/mmc/core/mmc.c
+index 6d02012..22fd4d4 100644
+--- a/drivers/mmc/core/mmc.c
++++ b/drivers/mmc/core/mmc.c
+@@ -293,12 +293,14 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
+ 	}
+ 
+ 	card->ext_csd.rev = ext_csd[EXT_CSD_REV];
++  /*
+ 	if (card->ext_csd.rev > 7) {
+ 		pr_err("%s: unrecognised EXT_CSD revision %d\n",
+ 			mmc_hostname(card->host), card->ext_csd.rev);
+ 		err = -EINVAL;
+ 		goto out;
+ 	}
++  */
+ 
+ 	card->ext_csd.raw_sectors[0] = ext_csd[EXT_CSD_SEC_CNT + 0];
+ 	card->ext_csd.raw_sectors[1] = ext_csd[EXT_CSD_SEC_CNT + 1];
+-- 
+1.8.3.1
+

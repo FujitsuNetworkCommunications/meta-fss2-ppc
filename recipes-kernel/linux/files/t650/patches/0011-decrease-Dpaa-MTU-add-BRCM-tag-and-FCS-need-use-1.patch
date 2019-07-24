@@ -1,0 +1,381 @@
+From 73699fa7cb0e8e65b1a81126f41e4c8e36d05dbb Mon Sep 17 00:00:00 2001
+From: peter_huang <peter_huangQaccton.com>
+Date: Wed, 29 Aug 2018 17:35:10 +0800
+Subject: [PATCH] 1. decrease Dpaa MTU, add BRCM tag and FCS need use 10 bytes
+ 2. expand sk_buff tailroom, if it is smaller than 10 bytes 3. add Brcm tag to
+ non-linear sk_buff
+
+---
+ drivers/net/ethernet/freescale/dpa/dpaa_eth.h      |   4 +-
+ .../net/ethernet/freescale/dpa/dpaa_eth_common.h   |   3 +
+ .../net/ethernet/freescale/dpa/dpaa_eth_generic.c  |   7 +-
+ drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c   | 228 +++++++++++++++++++--
+ 4 files changed, 226 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/net/ethernet/freescale/dpa/dpaa_eth.h b/drivers/net/ethernet/freescale/dpa/dpaa_eth.h
+index 24504c0..3ae04a5 100644
+--- a/drivers/net/ethernet/freescale/dpa/dpaa_eth.h
++++ b/drivers/net/ethernet/freescale/dpa/dpaa_eth.h
+@@ -48,8 +48,10 @@ extern int dpa_num_cpus;
+ #define dpa_get_rx_extra_headroom() dpa_rx_extra_headroom
+ #define dpa_get_max_frm() dpa_max_frm
+ 
++#define BCM_TAG_LEN 10
++
+ #define dpa_get_max_mtu()	\
+-	(dpa_get_max_frm() - (VLAN_ETH_HLEN + ETH_FCS_LEN))
++	(dpa_get_max_frm() - (VLAN_ETH_HLEN + ETH_FCS_LEN)-BCM_TAG_LEN)
+ 
+ #define __hot
+ 
+diff --git a/drivers/net/ethernet/freescale/dpa/dpaa_eth_common.h b/drivers/net/ethernet/freescale/dpa/dpaa_eth_common.h
+index 3b255f8..dfe1e40 100644
+--- a/drivers/net/ethernet/freescale/dpa/dpaa_eth_common.h
++++ b/drivers/net/ethernet/freescale/dpa/dpaa_eth_common.h
+@@ -210,6 +210,9 @@ int dpa_proxy_set_mac_address(struct proxy_device *proxy_dev,
+ int dpa_proxy_set_rx_mode(struct proxy_device *proxy_dev,
+ 		      struct net_device *net_dev);
+ 
++int dpa_append_buffer_to_skb(struct sk_buff *skb, unsigned char* src, int length);
++int dpa_append_bcm_tag_buffer(unsigned char* src, unsigned char* dst, int length);
++void dpa_append_bcm_tag_nonlinear(struct sk_buff *skb, struct net_device *net_dev);
+ void dpa_append_bcm_tag(struct sk_buff *skb, struct net_device *net_dev);
+ #define CPU_PORT_INTERFACE "fm1-mac3"
+ #define CPU_PORT_INTERFACE2 "eth0"
+diff --git a/drivers/net/ethernet/freescale/dpa/dpaa_eth_generic.c b/drivers/net/ethernet/freescale/dpa/dpaa_eth_generic.c
+index 5669825..8b39cf3 100644
+--- a/drivers/net/ethernet/freescale/dpa/dpaa_eth_generic.c
++++ b/drivers/net/ethernet/freescale/dpa/dpaa_eth_generic.c
+@@ -607,6 +607,7 @@ static int __hot dpa_generic_tx(struct sk_buff *skb, struct net_device *netdev)
+ 	struct qman_fq *egress_fq;
+ 	int i = 0, err = 0;
+ 	int *countptr;
++    struct sk_buff * new_skb,*old_skb;
+ 
+ 	if (unlikely(skb_headroom(skb) < priv->tx_headroom)) {
+ 		struct sk_buff *skb_new;
+@@ -643,9 +644,9 @@ static int __hot dpa_generic_tx(struct sk_buff *skb, struct net_device *netdev)
+ 	}
+ 	if(strcmp(netdev->name,CPU_PORT_INTERFACE)==0||strcmp(netdev->name,CPU_PORT_INTERFACE2)==0)
+ 	{
+-		/*dump_packet(skb->data,skb->len+16);*/
+-		dpa_append_bcm_tag(skb,netdev);
+-		/*dump_packet(skb->data,skb->len+16);*/
++     	     /*dump_packet(skb->data,skb->len+16);*/
++	    //dpa_append_bcm_tag(skb,netdev);
++	    /*dump_packet(skb->data,skb->len+16);*/
+ 	}
+ 	addr = dma_map_single(bp->dev, skbh,
+ 			skb->len + priv->tx_headroom, DMA_TO_DEVICE);
+diff --git a/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c b/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c
+index 248c1f4..f571501 100644
+--- a/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c
++++ b/drivers/net/ethernet/freescale/dpa/dpaa_eth_sg.c
+@@ -153,9 +153,179 @@ static void dpa_remove_bcm_tag(struct sk_buff *skb, struct net_device *net_dev)
+ 
+ #endif     
+ }
++int dpa_append_buffer_to_skb(struct sk_buff *skb, unsigned char* src, int length)
++{
++    int ret=0;
++    int offset = 0;
++    void *to =src;
++    int len = length-10;
++	int start = skb_headlen(skb);
++	struct sk_buff *frag_iter;
++	int i, copy;
++
++	if (offset > (int)skb->len - len)
++		goto fault;
++
++	/* Copy header. */
++	if ((copy = start - offset) > 0) {
++		if (copy > len)
++			copy = len;
++		memcpy(skb->data + offset,to, copy);
++		if ((len -= copy) == 0)
++			return 0;
++		offset += copy;
++		to     += copy;
++	}
++
++	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
++		int end;
++		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
++
++		WARN_ON(start > offset + len);
++
++		end = start + skb_frag_size(f);
++		if ((copy = end - offset) > 0) {
++			u8 *vaddr;
++
++			if (copy > len)
++				copy = len;
++
++			vaddr = kmap_atomic(skb_frag_page(f));
++			memcpy(vaddr + f->page_offset + offset - start,
++                            to,
++			       copy);            
++			kunmap_atomic(vaddr);
++
++			if ((len -= copy) == 0){
++             			offset += copy;
++        			to     += copy;
++				goto add_extend;
++			}
++			offset += copy;
++			to     += copy;
++		}
++		start = end;
++	}
++
++
++    /*if len is 0, means old buffer is re-writte, need apped 10 bytes*/
++add_extend:    
++    if(len==0){ 
++    u8 *vaddr;
++        copy = 10;
++        i = skb_shinfo(skb)->nr_frags-1;
++        skb_frag_t *f = &skb_shinfo(skb)->frags[i];
++        skb_frag_size_add(f,copy);
++        vaddr = kmap_atomic(skb_frag_page(f));
++	memcpy(vaddr + f->page_offset + offset - start,
++                            to,
++			       copy); 
++	kunmap_atomic(vaddr);
++        skb->len += copy;
++	 skb->data_len += copy;
++	 skb->truesize += copy;
++    }
++
++	if (!len)
++		return 0;
++
++fault:
++	return -EFAULT;
++}
++
++int dpa_append_bcm_tag_buffer(unsigned char* src, unsigned char* dst, int length)
++{
++#if 1
++    struct brcm_tag brcmTag;
++    int new_lebgth=0;
++    unsigned char multicast_bpdu_mac[5]={0x01,0x80,0xc2,0x00,0x00};
++    uint32_t crc_original,crc_original2;
++    
++        memcpy(dst,src,12);
++        new_lebgth+=12;
++   
++	/*COPY brcm_tag*/
++        /* Add broadcom management tag*/
++        brcmTag.type = htons(BRCM_TYPE);
++        /*COPY brcm option and ports*/
++        if(memcmp(dst,multicast_bpdu_mac,5)==0){
++            brcmTag.op = htons(BRCM_BPDU_OP);
++            brcmTag.port=htons(BRCM_BPDU_PORT);
++        }else{
++            brcmTag.op = htons(BRCM_OP);
++            brcmTag.port=htons(BRCM_PORT);
++        }
++
++
++        memcpy(dst + new_lebgth,&brcmTag,sizeof(struct brcm_tag));
++        new_lebgth+=sizeof(struct brcm_tag);
++        memcpy(dst+new_lebgth,src+12,length-12);
++        new_lebgth = length +sizeof(struct brcm_tag);
++       
++	/*COPY original fcs*/
++	crc_original = crc32((uint32_t)length,(uint8_t*)src);
++	crc_original2 =a_htonl(crc_original);
++	memcpy(dst+new_lebgth,&crc_original2,4);
++    
++    new_lebgth +=4;
++#endif
++    //memcpy(dst,src,length);
++    return new_lebgth;
++
++}
++
++void dpa_append_bcm_tag_nonlinear(struct sk_buff *skb, struct net_device *net_dev)
++{
++    unsigned char ori_data[4096]={0};
++    int len_ori=0,len_new=0;
++    int copy_counter_new=0;
++
++    int length= skb->len;
++    int headlen = skb_headlen(skb);
++    int needed=sizeof(struct brcm_tag)+BRCM_FCS_SIZE;
++        /*BPDU header*/
++    int ret;
++    unsigned char* data=NULL;
++
++
++    /*printk("(%s:%d),skb headroom:%d, tailroom:%d,availroom:%d,skb->data_len:%d,skb->len:%d,skb_end_offset:%d\n\r",__FUNCTION__,__LINE__,skb_headroom(skb), skb_tailroom(skb), skb_availroom(skb),skb->data_len,skb->len,skb_end_offset(skb));  */
++
++    ret = skb_copy_bits(skb,0,ori_data,length);
++    if(ret!=0)
++           return;
++    /*printk("(%s:%d) dump ori data (%d)\n\r",__FUNCTION__,__LINE__,length);    
++    dump_packet(ori_data,length);*/
++
++    data = kmalloc(length + 10,GFP_ATOMIC);
++    memset(data,0,length + 10);
++    len_new = dpa_append_bcm_tag_buffer(ori_data,data,length);
++
++    /*printk("(%s:%d) dump new data (%d)\n\r",__FUNCTION__,__LINE__,len_new);    
++    //dump_packet(data,len_new);*/
++
++    dpa_append_buffer_to_skb(skb,data,len_new);    
++
++    memset(ori_data,0,len_new);
++    ret = skb_copy_bits(skb,0,ori_data,len_new);
++    if(ret!=0)
++           return;
++    /*printk("(%s:%d) dump new data (%d)\n\r",__FUNCTION__,__LINE__,len_new);    
++    dump_packet(ori_data,len_new);*/
++
++
++
++    if(data!=NULL)
++            kfree(data);
++    
++/*    printk("(%s:%d),skb headroom:%d, tailroom:%d,availroom:%d,skb->data_len:%d,skb->len:%d,skb_end_offset:%d\n\r",__FUNCTION__,__LINE__,skb_headroom(skb), skb_tailroom(skb), skb_availroom(skb),skb->data_len,skb->len,skb_end_offset(skb));    */
++    return;
++}
+ 
+ void dpa_append_bcm_tag(struct sk_buff *skb, struct net_device *net_dev)
+ {
++	//struct sk_buff *new;
++	int ret;
++	//uint32_t tailroom = skb_tailroom(skb);
+ 	uint32_t crc_brcm,crc_brcm2;
+ 	uint32_t crc_original,crc_original2;
+     	struct brcm_tag brcmTag;
+@@ -167,6 +337,11 @@ void dpa_append_bcm_tag(struct sk_buff *skb, struct net_device *net_dev)
+ 	//unsigned int size = skb_end_offset(skb) + sizeof(struct brcm_tag)+BRCM_FCS_SIZE;
+ #if 1
+        unsigned char new_data[4096]={0};
++
++
++        if(skb_is_nonlinear(skb)==1){
++            return dpa_append_bcm_tag_nonlinear(skb,net_dev);
++        }
+        memcpy(new_data,skb->data,12);
+ 	/*COPY brcm_tag*/
+         /* Add broadcom management tag*/
+@@ -185,7 +360,7 @@ void dpa_append_bcm_tag(struct sk_buff *skb, struct net_device *net_dev)
+             skb_put(skb,60-length);
+             length=60;            
+         }
+-
++        //printk("(%s:%d),skb headroom:%d, tailroom:%d,availroom:%d,skb->data_len:%d,skb->len:%d,skb_end_offset:%d\n\r",__FUNCTION__,__LINE__,skb_headroom(skb), skb_tailroom(skb), skb_availroom(skb),skb->data_len,skb->len,skb_end_offset(skb));
+         memcpy(new_data + 12,&brcmTag,sizeof(struct brcm_tag));
+ 
+         memcpy(new_data+12+sizeof(struct brcm_tag),skb->data+12,length-12);
+@@ -208,12 +383,37 @@ void dpa_append_bcm_tag(struct sk_buff *skb, struct net_device *net_dev)
+ 	/*printk("\nFCS brcm: 0X%08X,0X%08X\n", crc_brcm,crc_brcm2);*/
+ 
+ 	//memcpy(new_data+length+needed,&crc_brcm2,4);
+-
+-        skb_put(skb,needed);
++#if 0	
++    /*if tailroom is smaller than apped size*/
++        if(tailroom<needed)
++        {
++                skb_push(skb,needed);
++        }
++        else
++                skb_put(skb,needed);
+         memcpy(skb->data,new_data,skb->len);
+         skb->no_fcs =1;
+         skb->protocol =htons(BRCM_TYPE);
+         //memcpy(skb->data,new_data,skb->len);
++#else
++    if (unlikely(skb_tailroom(skb) < needed)) {
++		ret = pskb_expand_head(skb, 0, needed, GFP_ATOMIC);
++		if (ret)
++			return;
++    }
++   
++    if (unlikely(skb_tailroom(skb) >= needed))    {
++	skb_put(skb, needed);
++       memcpy(skb->data,new_data,skb->len);
++       skb->no_fcs =1;
++       skb->protocol =htons(BRCM_TYPE);
++        }
++    else{
++        //printk("(%s:%d),no room\r\n",__FUNCTION__,__LINE__);
++    }
++#endif
++        //printk("(%s:%d),skb headroom:%d, tailroom:%d,availroom:%d,skb->data_len:%d,skb->len:%d,skb_end_offset:%d\n\r",__FUNCTION__,__LINE__,skb_headroom(skb), skb_tailroom(skb), skb_availroom(skb),skb->data_len,skb->len,skb_end_offset(skb));
++
+ #endif    
+ }
+ 
+@@ -768,7 +968,7 @@ void __hot _dpa_rx(struct net_device *net_dev,
+ 	skb->protocol = eth_type_trans(skb, net_dev);
+ 
+ 	/* IP Reassembled frames are allowed to be larger than MTU */
+-	if (unlikely(dpa_check_rx_mtu(skb, net_dev->mtu) &&
++	if (unlikely(dpa_check_rx_mtu(skb, net_dev->mtu+BCM_TAG_LEN) &&
+ 		!(fd_status & FM_FD_IPR))) {
+ 		percpu_stats->rx_dropped++;
+ 		goto drop_bad_frame;
+@@ -825,6 +1025,7 @@ static int __hot skb_to_contig_fd(struct dpa_priv_s *priv,
+ 	int err;
+ 	enum dma_data_direction dma_dir;
+ 	unsigned char *buffer_start;
++    struct sk_buff * new_skb,*old_skb;
+ 
+ #ifndef CONFIG_FSL_DPAA_TS
+ 	/* Check recycling conditions; only if timestamp support is not
+@@ -883,9 +1084,9 @@ static int __hot skb_to_contig_fd(struct dpa_priv_s *priv,
+ 	}
+ 	if(strcmp(net_dev->name,CPU_PORT_INTERFACE)==0||strcmp(net_dev->name,CPU_PORT_INTERFACE2)==0)
+ 	{
+-		/*dump_packet(skb->data,skb->len+16);*/
+-		dpa_append_bcm_tag(skb,net_dev);
+-		/*dump_packet(skb->data,skb->len+16);printk("(%s:%d) net_dev->name:%s, packet len:%d,skb->no_fcs:%d, csum:%08x, ip_summ:%d\n",__FUNCTION__,__LINE__,net_dev->name,skb->len,skb->no_fcs,skb->csum,skb->ip_summed);*/
++            /*dump_packet(skb->data,skb->len+16);*/
++	    //dpa_append_bcm_tag(skb,net_dev);
++	    /*dump_packet(skb->data,skb->len+16);printk("(%s:%d) net_dev->name:%s, packet len:%d,skb->no_fcs:%d, csum:%08x, ip_summ:%d\n",__FUNCTION__,__LINE__,net_dev->name,skb->len,skb->no_fcs,skb->csum,skb->ip_summed);*/
+ 	}
+ 	/* Fill in the rest of the FD fields */
+ 	fd->format = qm_fd_contig;
+@@ -923,6 +1124,8 @@ static int __hot skb_to_sg_fd(struct dpa_priv_s *priv,
+ 	const enum dma_data_direction dma_dir = DMA_TO_DEVICE;
+ 	const int nr_frags = skb_shinfo(skb)->nr_frags;
+ 
++       struct sk_buff * new_skb,*old_skb;
++
+ 	fd->format = qm_fd_sg;
+ 
+ 	/* get a page frag to store the SGTable */
+@@ -948,9 +1151,9 @@ static int __hot skb_to_sg_fd(struct dpa_priv_s *priv,
+ 
+ 	if(strcmp(net_dev->name,CPU_PORT_INTERFACE)==0||strcmp(net_dev->name,CPU_PORT_INTERFACE2)==0)
+ 	{
+-		/*dump_packet(skb->data,skb->len+16);*/
+-		dpa_append_bcm_tag(skb,net_dev);
+-		/*dump_packet(skb->data,skb->len+16);printk("(%s:%d) net_dev->name:%s, packet len:%d,skb->no_fcs:%d, csum:%08x, ip_summ:%d\n",__FUNCTION__,__LINE__,net_dev->name,skb->len,skb->no_fcs,skb->csum,skb->ip_summed);*/
++	    /*dump_packet(skb->data,skb->len+16);*/
++	    //dpa_append_bcm_tag(skb,net_dev);
++	    /*dump_packet(skb->data,skb->len+16);printk("(%s:%d) net_dev->name:%s, packet len:%d,skb->no_fcs:%d, csum:%08x, ip_summ:%d\n",__FUNCTION__,__LINE__,net_dev->name,skb->len,skb->no_fcs,skb->csum,skb->ip_summed);*/
+ 	}
+ 
+ 	sgt = (struct qm_sg_entry *)(sgt_buf + priv->tx_headroom);
+@@ -1044,8 +1247,9 @@ int __hot dpa_tx(struct sk_buff *skb, struct net_device *net_dev)
+ 	/*printk("(%s:%d) net_dev->name:%s, packet len:%d,skb->no_fcs:%d, csum:%08x, ip_summ:%d\n",__FUNCTION__,__LINE__,net_dev->name,skb->len,skb->no_fcs,skb->csum,skb->ip_summed);*/
+ 	if(strcmp(net_dev->name,CPU_PORT_INTERFACE)==0||strcmp(net_dev->name,CPU_PORT_INTERFACE2)==0)
+ 	{
+-		/*dump_packet(skb->data,skb->len+16);*/ if(skb->ip_summed==3) {skb_checksum_help(skb);skb->ip_summed=2;}
+-		/*dpa_append_bcm_tag(skb,net_dev);*/
++	       if(skb->ip_summed==3) {skb_checksum_help(skb);skb->ip_summed=2;}
++		/*dump_packet(skb->data,skb->len+16);*/ 
++		dpa_append_bcm_tag(skb,net_dev);
+ 		/*dump_packet(skb->data,skb->len+16);*/
+ 	}
+ #if defined(CONFIG_AS_FASTPATH) || defined(CONFIG_FSL_FMAN_TEST)
+-- 
+1.9.1
+
