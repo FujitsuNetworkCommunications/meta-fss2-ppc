@@ -81,7 +81,7 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0023-workaround-for-hard-reset-in-R0A-blade.patch                \
                         file://${MACHINE}/patches/0024-add-code-to-find-the-pci-parent-resource.patch              \
                         file://${MACHINE}/patches/0025-remove-retry-messages-while-retrying-i2c-interface.patch    \
-                        file://${MACHINE}/patches/0026-support-LM75-on-the-PIU.patch                               \
+                        file://${MACHINE}/patches/0026-4.1-support-LM75-on-the-PIU.patch                           \
                         file://${MACHINE}/patches/0027-ACCTON-550-change-udelay-to-usleep-for-improving-the.patch  \
                         file://${MACHINE}/patches/0028-ACCTON-538-Re-PM-validity-of-NW-port-EQPT-PM-is-some.patch  \
                         file://${MACHINE}/patches/0029-ACCTON-379-Blade-cannot-start-up-by-Time-has-been-ch.patch  \
