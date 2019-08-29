@@ -33,7 +33,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T600-NOR
                         file://${MACHINE}/patches/0023-workaround-for-hard-reset-in-R0A-blade.patch                \
                         file://${MACHINE}/patches/0024-add-code-to-find-the-pci-parent-resource.patch              \
                         file://${MACHINE}/patches/0025-remove-retry-messages-while-retrying-i2c-interface.patch    \
-                        file://${MACHINE}/patches/0026-support-LM75-on-the-PIU.patch                               \
+                        file://${MACHINE}/patches/0026-4.1-support-LM75-on-the-PIU.patch                           \
                         file://${MACHINE}/patches/0027-ACCTON-550-change-udelay-to-usleep-for-improving-the.patch  \
                         file://${MACHINE}/patches/0028-ACCTON-538-Re-PM-validity-of-NW-port-EQPT-PM-is-some.patch  \
                         file://${MACHINE}/patches/0029-ACCTON-379-Blade-cannot-start-up-by-Time-has-been-ch.patch  \
@@ -49,9 +49,11 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T600-NOR
                         file://${MACHINE}/patches/0039-4.1-ACCTON-727-continued-fix-dpa-tx-err-hand.patch          \
                         file://${MACHINE}/patches/0040-4.1-ACCTON-727-fix_incomplete_patch-dpa-tx-err-hand.patch   \
                         file://${MACHINE}/patches/0041-Add-PIU-scan-mutex.-Application-must-use-this-mutex-.patch  \
+                        file://${MACHINE}/patches/0001-4.1-Matching-gpio-numbers-to-3.12-kernel.patch              \
+                        file://${MACHINE}/patches/0001-4.1-match-3.12-kernel-temperature-sysfs.patch               \
                         file://${MACHINE}/patches/0042-ACCTON-858-Main-signal-is-down-after-PIU-reseat.patch       \
-                        file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch \
-                        file://${MACHINE}/patches/0044-Fan-speed-changes-to-max-automatically.patch \
+                        file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch              \
+                        file://${MACHINE}/patches/0044-4.1-Fan-speed-changes-to-max-automatically.patch            \
                        "
 
 SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR-flash-partition.patch \
@@ -79,7 +81,7 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0023-workaround-for-hard-reset-in-R0A-blade.patch                \
                         file://${MACHINE}/patches/0024-add-code-to-find-the-pci-parent-resource.patch              \
                         file://${MACHINE}/patches/0025-remove-retry-messages-while-retrying-i2c-interface.patch    \
-                        file://${MACHINE}/patches/0026-support-LM75-on-the-PIU.patch                               \
+                        file://${MACHINE}/patches/0026-4.1-support-LM75-on-the-PIU.patch                           \
                         file://${MACHINE}/patches/0027-ACCTON-550-change-udelay-to-usleep-for-improving-the.patch  \
                         file://${MACHINE}/patches/0028-ACCTON-538-Re-PM-validity-of-NW-port-EQPT-PM-is-some.patch  \
                         file://${MACHINE}/patches/0029-ACCTON-379-Blade-cannot-start-up-by-Time-has-been-ch.patch  \
@@ -95,10 +97,11 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0039-4.1-ACCTON-727-continued-fix-dpa-tx-err-hand.patch          \
                         file://${MACHINE}/patches/0040-4.1-ACCTON-727-fix_incomplete_patch-dpa-tx-err-hand.patch   \
                         file://${MACHINE}/patches/0041-Add-PIU-scan-mutex.-Application-must-use-this-mutex-.patch  \
-                        file://${MACHINE}/patches/0042-ACCTON-858-Main-signal-is-down-after-PIU-reseat.patch       \
-                        file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch              \
                         file://${MACHINE}/patches/0001-4.1-Matching-gpio-numbers-to-3.12-kernel.patch              \
                         file://${MACHINE}/patches/0001-4.1-match-3.12-kernel-temperature-sysfs.patch               \
+                        file://${MACHINE}/patches/0042-ACCTON-858-Main-signal-is-down-after-PIU-reseat.patch       \
+                        file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch              \
+                        file://${MACHINE}/patches/0044-4.1-Fan-speed-changes-to-max-automatically.patch            \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/${MACHINE}/kconfig/${MACHINE}_config"
@@ -158,4 +161,4 @@ do_deploy_prepend() {
     done
 }
 
-PR := "${PR}.5"
+PR := "${PR}.6"
