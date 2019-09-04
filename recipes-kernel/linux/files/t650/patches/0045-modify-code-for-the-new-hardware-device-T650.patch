@@ -1,0 +1,23 @@
+From b3a9b726f76b0e5aac9928791a6ccee87b3f4ce3 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 4 Sep 2019 16:01:13 +0800
+Subject: [PATCH] modify code for the new hardware device T650
+
+---
+ drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_common.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_common.h b/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_common.h
+index 4441208..9b1a76f 100644
+--- a/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_common.h
++++ b/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_common.h
+@@ -231,5 +231,5 @@ int dpa_append_bcm_tag_buffer(unsigned char* src, unsigned char* dst, int length
+ void dpa_append_bcm_tag_nonlinear(struct sk_buff *skb, struct net_device *net_dev);
+ void dpa_append_bcm_tag(struct sk_buff *skb, struct net_device *net_dev);
+ #define CPU_PORT_INTERFACE "fm1-mac3"
+-#define CPU_PORT_INTERFACE2 "eth0"
++#define CPU_PORT_INTERFACE2 "ethx"
+ #endif /* __DPAA_ETH_COMMON_H */
+-- 
+1.9.1
+

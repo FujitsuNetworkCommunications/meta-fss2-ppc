@@ -102,6 +102,7 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0042-ACCTON-858-Main-signal-is-down-after-PIU-reseat.patch       \
                         file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch              \
                         file://${MACHINE}/patches/0044-4.1-Fan-speed-changes-to-max-automatically.patch            \
+                        file://${MACHINE}/patches/0045-modify-code-for-the-new-hardware-device-T650.patch          \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/${MACHINE}/kconfig/${MACHINE}_config"
