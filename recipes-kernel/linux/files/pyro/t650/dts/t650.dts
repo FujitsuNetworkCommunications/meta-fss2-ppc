@@ -66,12 +66,12 @@
 		};
 
 		fm1mac3: ethernet@e4000 {
-			phy-handle = <&rgmii_phy1>;
-			phy-connection-type = "rgmii";
+			status = "disabled";
 		};
 
 		fm1mac4: ethernet@e6000 {
-			status = "disabled";
+			phy-handle = <&sgmii_phy2>;
+			phy-connection-type = "sgmii";
 		};
 
 		fm1mac5: ethernet@e8000 {
@@ -103,8 +103,8 @@
 			rgmii_phy1: ethernet-phy@1 {
 				reg = <0x8>;
 			};
-			rgmii_phy2: ethernet-phy@2 {
-				reg = <0x2>;
+			sgmii_phy2: ethernet-phy@2 {
+				reg = <0x1f>;
 			};
 			sgmii_phy1: ethernet-phy@3 {
 				reg = <0x1>;
