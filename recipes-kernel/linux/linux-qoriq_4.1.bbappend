@@ -104,6 +104,7 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0044-4.1-Fan-speed-changes-to-max-automatically.patch            \
                         file://${MACHINE}/patches/0045-modify-code-for-the-new-hardware-device-T650.patch          \
                         file://${MACHINE}/patches/0046-support-QSFPDD-EEPROM.patch                                 \
+                        file://${MACHINE}/patches/0047-Modify-sysfs-interface-from-i2c-device-to-hwmon-clas.patch  \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/${MACHINE}/kconfig/${MACHINE}_config"
