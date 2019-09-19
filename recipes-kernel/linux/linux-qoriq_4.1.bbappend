@@ -55,6 +55,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T600-NOR
                         file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch              \
                         file://${MACHINE}/patches/0044-4.1-Fan-speed-changes-to-max-automatically.patch            \
                         file://${MACHINE}/patches/0047-Modify-sysfs-interface-from-i2c-device-to-hwmon-clas.patch  \
+                        file://${MACHINE}/patches/0048-Modify-FAN-duty-cycle-algorithm.-We-set-duty-cycle-b.patch  \
                        "
 
 SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR-flash-partition.patch \
@@ -106,6 +107,7 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0045-modify-code-for-the-new-hardware-device-T650.patch          \
                         file://${MACHINE}/patches/0046-support-QSFPDD-EEPROM.patch                                 \
                         file://${MACHINE}/patches/0047-Modify-sysfs-interface-from-i2c-device-to-hwmon-clas.patch  \
+                        file://${MACHINE}/patches/0048-Modify-FAN-duty-cycle-algorithm.-We-set-duty-cycle-b.patch  \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/${MACHINE}/kconfig/${MACHINE}_config"
