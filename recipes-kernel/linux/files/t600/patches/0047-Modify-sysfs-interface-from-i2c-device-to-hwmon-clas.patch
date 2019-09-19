@@ -1,0 +1,51 @@
+From 5710eef0dbb6af461e37df34937e1d233752d798 Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge.core.com>
+Date: Thu, 12 Sep 2019 11:11:03 +0800
+Subject: [PATCH] Modify sysfs interface from i2c device to hwmon class.
+
+1. Both of T600 & T650 support this interface.
+---
+ drivers/hwmon/accton_t600_fan.c | 21 ++++-----------------
+ 1 file changed, 4 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/hwmon/accton_t600_fan.c b/drivers/hwmon/accton_t600_fan.c
+index 0475575..4032982 100755
+--- a/drivers/hwmon/accton_t600_fan.c
++++ b/drivers/hwmon/accton_t600_fan.c
+@@ -69,29 +69,16 @@ enum thermal_id
+     NUM_OF_THERMAL_SENSOR
+ };
+ 
+-#if 1 /* Roy Chuang Mark Begin 2018/9/5, reason: */
+ char *thermal_sensor_path[NUM_OF_THERMAL_SENSOR] = {
+-"/sys/bus/i2c/devices/20-0049/hwmon/hwmon8/temp1_input", /* RNR sensor from PIU1 */
+-"/sys/bus/i2c/devices/21-0049/hwmon/hwmon9/temp1_input", /* RNR sensor from PIU2 */
+-"/sys/bus/i2c/devices/31-0048/hwmon/hwmon10/temp1_input",
++"/sys/class/hwmon/hwmon8/temp1_input", /* RNR sensor from PIU1 */
++"/sys/class/hwmon/hwmon9/temp1_input", /* RNR sensor from PIU2 */
++"/sys/class/hwmon/hwmon10/temp1_input",
+ "none_temp1_input",    /* skip */
+ "none_temp1_input",    /* skip */
+ "none_temp1_input",    /* skip */
+ "none_temp1_input",    /* skip */
+-"/sys/bus/i2c/devices/6-001a/hwmon/hwmon2/temp1_input"
++"/sys/class/hwmon/hwmon2/temp1_input"
+ };
+-#else /* simulation */
+-char *thermal_sensor_path[NUM_OF_THERMAL_SENSOR] = {
+-"/sys/bus/i2c/devices/10-0061/temp0_input",
+-"/sys/bus/i2c/devices/10-0061/temp1_input",
+-"/sys/bus/i2c/devices/10-0061/temp2_input",
+-"/sys/bus/i2c/devices/10-0061/temp3_input",
+-"/sys/bus/i2c/devices/10-0061/temp4_input",
+-"/sys/bus/i2c/devices/10-0061/temp5_input",
+-"/sys/bus/i2c/devices/10-0061/temp6_input",
+-"/sys/bus/i2c/devices/10-0061/temp7_input",
+-};
+-#endif /* Roy Chuang Mark End */
+ 
+ typedef struct fan_ctrl_policy {
+    int cpld_val;
+-- 
+1.9.1
+
