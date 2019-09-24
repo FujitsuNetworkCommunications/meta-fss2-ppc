@@ -1,0 +1,32 @@
+From 5f9699f39228b2fee3465d15b1ab9a1c64cdc987 Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge.core.com>
+Date: Mon, 23 Sep 2019 22:27:23 +0800
+Subject: [PATCH] Modify FAN temperature algorithm. If current duty is found in
+ policy list, set duty cycle to policy value. 1. Reset blade when M -> H. 2.
+ Set duty cycle to H when system boot up.
+
+---
+ drivers/hwmon/accton_t600_fan.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/accton_t600_fan.c b/drivers/hwmon/accton_t600_fan.c
+index 49509d6..1bf9619 100755
+--- a/drivers/hwmon/accton_t600_fan.c
++++ b/drivers/hwmon/accton_t600_fan.c
+@@ -1042,7 +1042,12 @@ static void set_fan_speed_by_temp(struct i2c_client *client, struct t600_fan_dat
+ 
+ 	/* Check if current duty is found in policy list */
+ 	if (!new_duty_cycle) {
+-		new_duty_cycle = FAN_DUTY_CYCLE_DEFAULT;
++		if (current_duty_cycle < FAN_DUTY_CYCLE_75_CPLD_VAL){
++			new_duty_cycle = FAN_DUTY_CYCLE_75_CPLD_VAL;
++		}
++		else {
++			new_duty_cycle = FAN_DUTY_CYCLE_MAX_CPLD_VAL;
++		}
+ 	}
+ 
+ 	/* Check if duty cycle is changed */
+-- 
+1.9.1
+
