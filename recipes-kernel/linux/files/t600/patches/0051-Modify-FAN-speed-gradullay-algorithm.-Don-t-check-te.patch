@@ -1,0 +1,93 @@
+From 5360996db99731fd2ed93d10171ec56ddb703f0f Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge.core.com>
+Date: Sat, 28 Sep 2019 16:20:19 +0800
+Subject: [PATCH] Modify FAN speed gradullay algorithm. Don't check temperature
+ during gradullay change.
+
+---
+ drivers/hwmon/accton_t600_fan.c | 39 ++++++++++++++++++---------------------
+ 1 file changed, 18 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/hwmon/accton_t600_fan.c b/drivers/hwmon/accton_t600_fan.c
+index b7c2480..7003031 100755
+--- a/drivers/hwmon/accton_t600_fan.c
++++ b/drivers/hwmon/accton_t600_fan.c
+@@ -993,15 +993,9 @@ exit:
+ 
+ static void set_fan_speed_by_temp(struct i2c_client *client, struct t600_fan_data *data) {
+ 	int  i, j, policy_items, old_duty_cycle, new_duty_cycle = 0;
+-	int current_duty_cycle = data->reg_val[FAN_PWM1];
+ 	fan_ctrl_policy_t *policy;
+ 
+-	if(data->duty_policie_source == DUTY_CYCLE_NONE){
+-		old_duty_cycle = current_duty_cycle;
+-	}
+-	else{
+-		old_duty_cycle = data->duty_policie_source;
+-	}
++	old_duty_cycle = data->reg_val[FAN_PWM1];
+ 
+ 	/* Adjust new duty cycle
+ 	 */
+@@ -1042,7 +1036,7 @@ static void set_fan_speed_by_temp(struct i2c_client *client, struct t600_fan_dat
+ 
+ 	/* Check if current duty is found in policy list */
+ 	if (!new_duty_cycle) {
+-		if (current_duty_cycle < FAN_DUTY_CYCLE_75_CPLD_VAL){
++		if (old_duty_cycle < FAN_DUTY_CYCLE_75_CPLD_VAL){
+ 			new_duty_cycle = FAN_DUTY_CYCLE_75_CPLD_VAL;
+ 		}
+ 		else {
+@@ -1055,15 +1049,15 @@ static void set_fan_speed_by_temp(struct i2c_client *client, struct t600_fan_dat
+ 		return;
+ 	}
+ 
+-	/* Update duty cycle. We set duty cycle by sequence level.
+-	 */
+-	if(data->duty_policie_source == DUTY_CYCLE_NONE){
+-		/* Start setting duty cycle */
+-		data->duty_policie_source = old_duty_cycle;
+-		data->duty_policie_target = new_duty_cycle;
+-		data->speed_timer_cnt= data->speed_delay_time / (FAN_SPEED_CTRL_INTERVAL / 1000);
+-		return;
+-	}
++	/* Start setting duty cycle when duty_policie_source is not DUTY_CYCLE_NONE */
++	data->duty_policie_source = old_duty_cycle;
++	data->duty_policie_target = new_duty_cycle;
++	data->speed_timer_cnt= data->speed_delay_time / (FAN_SPEED_CTRL_INTERVAL / 1000);
++}
++
++static void set_fan_speed_gradually(struct i2c_client *client, struct t600_fan_data *data) {
++	int current_duty_cycle = data->reg_val[FAN_PWM1];
++
+ 	if(data->duty_policie_target == current_duty_cycle){
+ 		/* Stop setting duty cycle */
+ 		data->duty_policie_source = DUTY_CYCLE_NONE;
+@@ -1082,7 +1076,6 @@ static void set_fan_speed_by_temp(struct i2c_client *client, struct t600_fan_dat
+ 	else{
+ 		fan_set_duty_cycle_to_cpld(client, current_duty_cycle - 1);
+ 	}
+-
+ }
+ 
+ static int fan_speed_ctrl_routine(void *arg)
+@@ -1116,9 +1109,13 @@ static int fan_speed_ctrl_routine(void *arg)
+ 			continue;
+ 		}
+ 
+-		/* Set fan speed by current duty cycle and temperature
+-		 */
+-		set_fan_speed_by_temp(client, data);
++		if (data->duty_policie_source == DUTY_CYCLE_NONE){
++			/* Set fan speed by current duty cycle and temperature */
++			set_fan_speed_by_temp(client, data);
++		}
++		else{
++			set_fan_speed_gradually(client, data);
++		}
+ 	}
+ 
+ 	if (data != NULL) {
+-- 
+1.9.1
+
