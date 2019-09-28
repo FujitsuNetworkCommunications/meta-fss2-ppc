@@ -58,6 +58,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T600-NOR
                         file://${MACHINE}/patches/0048-Modify-FAN-duty-cycle-algorithm.-We-set-duty-cycle-b.patch  \
                         file://${MACHINE}/patches/0049-Modify-FAN-temperature-algorithm.-If-current-duty-is.patch  \
                         file://${MACHINE}/patches/0050-Modify-default-time-interval-from-3-to-6-seconds.patch      \
+                        file://${MACHINE}/patches/0051-Modify-FAN-speed-gradullay-algorithm.-Don-t-check-te.patch  \
                        "
 
 SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR-flash-partition.patch \
@@ -112,6 +113,7 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0048-Modify-FAN-duty-cycle-algorithm.-We-set-duty-cycle-b.patch  \
                         file://${MACHINE}/patches/0049-Modify-FAN-temperature-algorithm.-If-current-duty-is.patch  \
                         file://${MACHINE}/patches/0050-Modify-default-time-interval-from-3-to-6-seconds.patch      \
+                        file://${MACHINE}/patches/0051-Modify-FAN-speed-gradullay-algorithm.-Don-t-check-te.patch  \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/${MACHINE}/kconfig/${MACHINE}_config"
