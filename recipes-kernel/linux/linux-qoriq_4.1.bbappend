@@ -60,6 +60,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T600-NOR
                         file://${MACHINE}/patches/0050-Modify-default-time-interval-from-3-to-6-seconds.patch      \
                         file://${MACHINE}/patches/0051-Modify-FAN-speed-gradullay-algorithm.-Don-t-check-te.patch  \
                         file://${MACHINE}/patches/0052-Modify-FAN-algorithm.-Don-t-check-FAN-status-in-ther.patch  \
+                        file://${MACHINE}/patches/0053-Change-the-code-from-isync-to-asm-volatile-for-memor.patch  \
                        "
 
 SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR-flash-partition.patch \
@@ -116,6 +117,7 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0050-Modify-default-time-interval-from-3-to-6-seconds.patch      \
                         file://${MACHINE}/patches/0051-Modify-FAN-speed-gradullay-algorithm.-Don-t-check-te.patch  \
                         file://${MACHINE}/patches/0052-Modify-FAN-algorithm.-Don-t-check-FAN-status-in-ther.patch  \
+                        file://${MACHINE}/patches/0053-Change-the-code-from-isync-to-asm-volatile-for-memor.patch  \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/${MACHINE}/kconfig/${MACHINE}_config"
