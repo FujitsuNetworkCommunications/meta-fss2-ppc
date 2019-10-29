@@ -1,0 +1,31 @@
+From 96c45f3d0b12da5ed5464e06123c108e294c1b18 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Mon, 28 Oct 2019 11:15:56 +0800
+Subject: [PATCH] Change the code from isync() to asm volatile() for memory
+ barrier in PowerPC.
+
+---
+ drivers/misc/accton_t600_fj_mdec.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index c095965..0e29abf 100755
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -190,7 +190,12 @@ static void t600_fj_mdec_write32(u32 value, void *addr)
+ 
+     mutex_lock(&io_lock);
+     iowrite32(data, addr);
+-    isync();
++
++    /* According to FJ's suggestion, we change the code from isync() to asm volatile() for memory barrier in PowerPC.
++     */
++    asm volatile("mbar 0" : : : "memory");
++    asm volatile("msync" : : : "memory");
++    asm volatile("isync" : : : "memory");
+     mutex_unlock(&io_lock);
+ }
+ 
+-- 
+1.9.1
+
