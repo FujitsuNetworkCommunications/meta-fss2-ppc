@@ -55,12 +55,15 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T600-NOR
                         file://${MACHINE}/patches/0043-ACCTON-996-Too-many-open-files-in-system.patch              \
                         file://${MACHINE}/patches/0044-4.1-Fan-speed-changes-to-max-automatically.patch            \
                         file://${MACHINE}/patches/0047-Modify-sysfs-interface-from-i2c-device-to-hwmon-clas.patch  \
+                        file://${MACHINE}/patches/0047-dpaa-allow-full-mtu-non-imp-ports.patch                     \
                         file://${MACHINE}/patches/0048-Modify-FAN-duty-cycle-algorithm.-We-set-duty-cycle-b.patch  \
                         file://${MACHINE}/patches/0049-Modify-FAN-temperature-algorithm.-If-current-duty-is.patch  \
                         file://${MACHINE}/patches/0050-Modify-default-time-interval-from-3-to-6-seconds.patch      \
                         file://${MACHINE}/patches/0051-Modify-FAN-speed-gradullay-algorithm.-Don-t-check-te.patch  \
+                        file://${MACHINE}/patches/0001-4.1-race-condition-in-pci-enable-disable-device.patch       \
                         file://${MACHINE}/patches/0052-Modify-FAN-algorithm.-Don-t-check-FAN-status-in-ther.patch  \
                         file://${MACHINE}/patches/0053-Change-the-code-from-isync-to-asm-volatile-for-memor.patch  \
+                        file://${MACHINE}/patches/0053-4.1-T600-3041-FIPS-disable-print-of-keys.patch              \
                        "
 
 SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR-flash-partition.patch \
@@ -85,7 +88,7 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0020-4.1-remove-packet-FCS-4-bytes-come-from-BCM5389.patch       \
                         file://${MACHINE}/patches/0021-add-protection-for-multi-processes-access-the-MDEC.patch    \
                         file://${MACHINE}/patches/0022-fix-2-sfp-bug.patch                                         \
-                        file://${MACHINE}/patches/0023-workaround-for-hard-reset-in-R0A-blade.patch                \
+                        file://${MACHINE}/patches/0023-dummy-workaround-for-hard-reset-in-R0A-blade.patch          \
                         file://${MACHINE}/patches/0024-add-code-to-find-the-pci-parent-resource.patch              \
                         file://${MACHINE}/patches/0025-remove-retry-messages-while-retrying-i2c-interface.patch    \
                         file://${MACHINE}/patches/0026-4.1-support-LM75-on-the-PIU.patch                           \
@@ -112,12 +115,15 @@ SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0045-modify-code-for-the-new-hardware-device-T650.patch          \
                         file://${MACHINE}/patches/0046-support-QSFPDD-EEPROM.patch                                 \
                         file://${MACHINE}/patches/0047-Modify-sysfs-interface-from-i2c-device-to-hwmon-clas.patch  \
+                        file://${MACHINE}/patches/0047-dpaa-allow-full-mtu-non-imp-ports.patch                     \
                         file://${MACHINE}/patches/0048-Modify-FAN-duty-cycle-algorithm.-We-set-duty-cycle-b.patch  \
                         file://${MACHINE}/patches/0049-Modify-FAN-temperature-algorithm.-If-current-duty-is.patch  \
                         file://${MACHINE}/patches/0050-Modify-default-time-interval-from-3-to-6-seconds.patch      \
                         file://${MACHINE}/patches/0051-Modify-FAN-speed-gradullay-algorithm.-Don-t-check-te.patch  \
+                        file://${MACHINE}/patches/0001-4.1-race-condition-in-pci-enable-disable-device.patch       \
                         file://${MACHINE}/patches/0052-Modify-FAN-algorithm.-Don-t-check-FAN-status-in-ther.patch  \
                         file://${MACHINE}/patches/0053-Change-the-code-from-isync-to-asm-volatile-for-memor.patch  \
+                        file://${MACHINE}/patches/0053-4.1-T600-3041-FIPS-disable-print-of-keys.patch              \
                        "
 
 KERNEL_DEFCONFIG  = "${WORKDIR}/${MACHINE}/kconfig/${MACHINE}_config"
@@ -177,4 +183,4 @@ do_deploy_prepend() {
     done
 }
 
-PR := "${PR}.6"
+PR := "${PR}.7"

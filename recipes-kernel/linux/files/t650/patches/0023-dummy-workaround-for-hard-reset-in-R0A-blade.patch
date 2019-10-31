@@ -4,6 +4,8 @@ Date: Wed, 21 Nov 2018 13:12:52 +0800
 Subject: [PATCH] workaround for hard-reset in R0A blade check the blade
  version and then execute the reset function.  Hard reset: R0A: execute warm
  reset. R0B: execute hard reset
+ UPDATED for T650:  This dummy patch is used to keep patches somewhat in
+ sync with T600.  Keep line numbers aligned for later patches.
 
 ---
  drivers/hwmon/accton_t600_cpld.c | 15 +++++++++++++++
@@ -17,20 +19,20 @@ index bac97d5..c636f63 100644
          return -EINVAL;
      }
  
-+    /* check HW blade version.
-+     * R0A: Not support Hard reset. We change to Warm reset to restart the system.
++    /* Dummy patch.  Keep line numbers aligned with T600 version */
++    /*
++     *
++     *
++     *
++     *
++     *
++     *
++     *
++     *
++     *
++     *
++     *
 +     */
-+    mutex_lock(&data->update_lock);
-+    status = t600_cpld_read(client, BOARD_REV_REG);
-+    if (unlikely(status < 0)) {
-+        goto exit;
-+    }
-+    mutex_unlock(&data->update_lock);
-+    if ((status & 0x7) == 0) /* R0A: 0x0, R0B: 0x1 */
-+    {
-+        if (reset == 1 )
-+            reset = 2;   /* change HARD reset to WARM reset */
-+    }
 +
      mutex_lock(&data->update_lock);
      if (reset == 1) {
