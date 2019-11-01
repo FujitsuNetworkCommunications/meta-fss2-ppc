@@ -22,7 +22,7 @@ index 9896137..3c11c59 100644
 +
 +	priv = netdev_priv(net_dev);
 +	/* Non-migratable context, safe to use __this_cpu_ptr */
-+	percpu_priv = __this_cpu_ptr(priv->percpu_priv);
++	percpu_priv = this_cpu_ptr(priv->percpu_priv);
 +	percpu_stats = &percpu_priv->stats;
    
  /* modify by peter, for BCM management tag*/
