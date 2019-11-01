@@ -183,4 +183,4 @@ do_deploy_prepend() {
     done
 }
 
-PR := "${PR}.7"
+PR := "${PR}.8"
