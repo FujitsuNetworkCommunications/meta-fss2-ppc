@@ -86,32 +86,6 @@ index 5dbe8a3..0823ded 100755
  
  EXPORT_SYMBOL(t600_reset);
  
--static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
-+ static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
-              char *buf)
- {
-     int status = 0;
--- 
-1.9.1
-
-
-From b9552f8adf213c69f00f1938d06258293e855c89 Mon Sep 17 00:00:00 2001
-From: roy_chuang <roy_chuang@edge.core.com>
-Date: Fri, 1 Nov 2019 17:59:26 +0800
-Subject: [PATCH 2/2] Remove unuse space.
-
----
- drivers/hwmon/accton_t600_cpld.c | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
-
-diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
-index 0823ded..470ea12 100755
---- a/drivers/hwmon/accton_t600_cpld.c
-+++ b/drivers/hwmon/accton_t600_cpld.c
-@@ -456,7 +456,7 @@ int t600_reset(int reset_type)
- 
- EXPORT_SYMBOL(t600_reset);
- 
 - static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
 +static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
               char *buf)
