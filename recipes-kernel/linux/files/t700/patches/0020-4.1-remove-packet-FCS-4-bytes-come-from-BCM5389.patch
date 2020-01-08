@@ -1,0 +1,46 @@
+From 7c1cba377d179aa4a959b42440a4727b2d9bd415 Mon Sep 17 00:00:00 2001
+From: "Barlow, Terry" <Terry.Barlow@us.fujitsu.com>
+Date: Wed, 6 Feb 2019 14:35:52 -0600
+Subject: [PATCH] 4.1-remove-packet-FCS-4-bytes-come-from-BCM5389
+
+---
+ drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c b/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c
+index f35fc35..9904026 100644
+--- a/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c
++++ b/drivers/net/ethernet/freescale/sdk_dpaa/dpaa_eth_sg.c
+@@ -147,7 +147,7 @@ static void dpa_remove_bcm_tag(struct sk_buff *skb, struct net_device *net_dev)
+        int length= skb->len;
+        int needed=sizeof(struct brcm_tag);
+        unsigned char new_data[1500]={0};
+-       int left_length=length-needed;
++       int left_length=length-needed-BRCM_FCS_SIZE;
+        int copy_length=0;
+ 
+        //memcpy(new_data,skb->data,12);
+@@ -155,8 +155,8 @@ static void dpa_remove_bcm_tag(struct sk_buff *skb, struct net_device *net_dev)
+        copy_length=12;
+        //memcpy(new_data+12,skb->data+12+sizeof(struct brcm_tag),length-12-sizeof(struct brcm_tag));
+        
+-        skb->len = length-needed;
+-        skb->tail-=needed;
++        skb->len = length-needed-BRCM_FCS_SIZE;
++        skb->tail = skb->tail-(needed+BRCM_FCS_SIZE);
+         while(left_length>0){
+             if(left_length>=1500){
+                 memcpy(new_data,skb->data+copy_length+sizeof(struct brcm_tag),1500);
+@@ -167,8 +167,8 @@ static void dpa_remove_bcm_tag(struct sk_buff *skb, struct net_device *net_dev)
+             else{
+                 memcpy(new_data,skb->data+copy_length+sizeof(struct brcm_tag),left_length);
+                 memcpy(skb->data+copy_length,new_data,left_length);
+-                left_length=0;
+                 copy_length=copy_length+left_length;
++                left_length=0;
+             }
+         }
+ #endif     
+-- 
+1.8.3.1
+

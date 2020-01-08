@@ -1,0 +1,44 @@
+From 9ad25023229a476b6630e0dc0f8f509e3c9b210c Mon Sep 17 00:00:00 2001
+From: Sharathkumar Doddagadduvallimohanraj
+ <sharathkumar.doddagadduvallimohanraj@us.fujitsu.com>
+Date: Tue, 29 Oct 2019 07:15:44 -0500
+Subject: [PATCH] T600-3041 FIPS-disable-print-of-keys
+
+---
+ kernel/system_keyring.c | 4 ++--
+ security/keys/proc.c    | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/system_keyring.c b/kernel/system_keyring.c
+index 875f64e..1a7fd86 100644
+--- a/kernel/system_keyring.c
++++ b/kernel/system_keyring.c
+@@ -90,8 +90,8 @@ static __init int load_system_certificate_list(void)
+ 			       PTR_ERR(key));
+ 		} else {
+ 			set_bit(KEY_FLAG_BUILTIN, &key_ref_to_ptr(key)->flags);
+-			pr_notice("Loaded X.509 cert '%s'\n",
+-				  key_ref_to_ptr(key)->description);
++/*			pr_notice("Loaded X.509 cert '%s'\n",
++				  key_ref_to_ptr(key)->description); */
+ 			key_ref_put(key);
+ 		}
+ 		p += plen;
+diff --git a/security/keys/proc.c b/security/keys/proc.c
+index f0611a6..997aa4f 100644
+--- a/security/keys/proc.c
++++ b/security/keys/proc.c
+@@ -261,8 +261,8 @@ static int proc_keys_show(struct seq_file *m, void *v)
+ 
+ #undef showflag
+ 
+-	if (key->type->describe)
+-		key->type->describe(key, m);
++/*	if (key->type->describe)
++		key->type->describe(key, m); */
+ 	seq_putc(m, '\n');
+ 
+ 	rcu_read_unlock();
+-- 
+1.8.3.1
+

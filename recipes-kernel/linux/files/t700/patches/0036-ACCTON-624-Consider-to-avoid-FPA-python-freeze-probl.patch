@@ -1,0 +1,83 @@
+From fee41caacc3393472a0a180a33fc68d6f6c708a5 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Tue, 29 Jan 2019 18:33:58 +0800
+Subject: [PATCH] ACCTON-624: Consider to avoid FPA python freeze problem
+ [Future]
+
+Consider to avoid FPA python freeze problem. Sometimes DHAL is locked after user kill DHAL.
+---
+ drivers/misc/accton_t600_fj_mdec.c | 30 +++++++++++++++++++++++++-----
+ 1 file changed, 25 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index f050610..b3a8813 100644
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -461,7 +461,11 @@ static ssize_t app_lock_store(struct device* dev, struct device_attribute* attr,
+     }
+     else
+     {
+-        mutex_unlock(&fpga_dev->app_lock);
++        /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++        if(1 == mutex_is_locked(&fpga_dev->app_lock))
++        {
++            mutex_unlock(&fpga_dev->app_lock);
++        }
+     }
+ 
+     return count;
+@@ -493,7 +497,11 @@ static ssize_t app_qsfp_lock_store(struct device* dev, struct device_attribute*
+             }
+             else
+             {
+-                mutex_unlock(&fpga_dev->app_piu1_qsfp_lock);
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_piu1_qsfp_lock))
++                {
++                    mutex_unlock(&fpga_dev->app_piu1_qsfp_lock);
++                }
+             }
+             break;
+ 
+@@ -504,7 +512,11 @@ static ssize_t app_qsfp_lock_store(struct device* dev, struct device_attribute*
+             }
+             else
+             {
+-                mutex_unlock(&fpga_dev->app_piu2_qsfp_lock);
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_piu2_qsfp_lock))
++                {
++                    mutex_unlock(&fpga_dev->app_piu2_qsfp_lock);
++                }
+             }
+             break;
+         default:
+@@ -541,7 +553,11 @@ static ssize_t app_dco_mdio_lock_store(struct device* dev, struct device_attribu
+             }
+             else
+             {
+-                mutex_unlock(&fpga_dev->app_piu1_dco_mdio_lock);
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_piu1_dco_mdio_lock))
++                {
++                    mutex_unlock(&fpga_dev->app_piu1_dco_mdio_lock);
++                }
+             }
+             break;
+ 
+@@ -552,7 +568,11 @@ static ssize_t app_dco_mdio_lock_store(struct device* dev, struct device_attribu
+             }
+             else
+             {
+-                mutex_unlock(&fpga_dev->app_piu2_dco_mdio_lock);
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_piu2_dco_mdio_lock))
++                {
++                    mutex_unlock(&fpga_dev->app_piu2_dco_mdio_lock);
++                }
+             }
+             break;
+         default:
+-- 
+1.9.1
+

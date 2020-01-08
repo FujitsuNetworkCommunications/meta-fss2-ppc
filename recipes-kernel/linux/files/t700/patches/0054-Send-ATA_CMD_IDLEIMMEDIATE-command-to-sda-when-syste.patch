@@ -1,0 +1,96 @@
+From b7eb4eea97ccbb428d93daed26e840025583711b Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge.core.com>
+Date: Fri, 1 Nov 2019 16:49:22 +0800
+Subject: [PATCH 1/2] Send ATA_CMD_IDLEIMMEDIATE command to sda when system
+ reset. Reference: patch from ACCTON-1066.
+
+---
+ drivers/hwmon/accton_t600_cpld.c | 53 +++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 52 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index 5dbe8a3..0823ded 100755
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -32,6 +32,16 @@
+ #include <linux/sysfs.h>
+ #include <linux/slab.h>
+ #include <linux/delay.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/syscalls.h>
++#include <linux/fcntl.h>
++#include <linux/hdreg.h>
++#include <linux/ioctl.h>
++#include <linux/ata.h>
++#include <asm/uaccess.h>
++#include <asm-generic/ioctl.h>
++#include <uapi/asm/ioctl.h>
+ 
+ #define DRVNAME "t600_cpld"
+ #define I2C_RW_RETRY_COUNT          10
+@@ -387,6 +397,40 @@ exit:
+     return status;
+ }
+ 
++/*!
++** @brief Set the disk to IDLE. Will rewrite IDLE command until the SATA CER
++**        register is 0x0. JIRA ACCTON-1066
++*/
++static void t600_idle_disk(const char* devicename) {
++    mm_segment_t old_fs;
++    int fd;
++    int rc;
++    unsigned char args[4] = {0, 0, 0, 0};
++
++    old_fs = get_fs();
++    set_fs(KERNEL_DS);
++
++    fd = sys_open(devicename, O_RDONLY, 0);
++    if (fd >= 0) {
++        printk (KERN_ERR "%s(): Sending IDLE IMMEDIATE to %s device.\n",
++            __FUNCTION__, devicename);
++        args[0] = ATA_CMD_IDLEIMMEDIATE;
++        rc = sys_ioctl(fd, HDIO_DRIVE_CMD, (unsigned long)args);
++        sys_close(fd);
++
++        if (rc != 0) {
++            printk (KERN_ERR "%s(): IDLE for %s device failed rc %d.\n",
++                __FUNCTION__, devicename, rc);
++        } else {
++            printk (KERN_ERR "%s(): IDLE for %s device OK rc %d.\n",
++                __FUNCTION__, devicename, rc);
++        }
++    } else {
++        printk (KERN_ERR "%s:%s():%d: ERROR - Failed to open the file %s device. \n",
++            __FILE__, __FUNCTION__, __LINE__, devicename);
++    }
++    set_fs(old_fs);
++}
+ 
+ int t600_reset(int reset_type)
+ {
+@@ -400,12 +444,19 @@ int t600_reset(int reset_type)
+ 		return -1;
+ 	}
+ 
++	/* FNC wdt interrupt calls this in interrupt context
++	 * The ioctl call in idle_disk is not happy in that context.
++	 */
++	if ( !in_interrupt() ) {
++		t600_idle_disk("/dev/sda");
++	}
++
+ 	return reset(t600_cpld_dev, NULL, data_buf[reset_type], 1);
+ }
+ 
+ EXPORT_SYMBOL(t600_reset);
+ 
+- static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
++static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
+              char *buf)
+ {
+     int status = 0;
+-- 
+1.9.1
+

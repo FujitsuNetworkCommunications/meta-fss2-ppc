@@ -1,0 +1,129 @@
+From 2edfeed1f69a5d0a7edb5d2847eee76451f90910 Mon Sep 17 00:00:00 2001
+From: James Dang <james.dang@us.fujitsu.com>
+Date: Tue, 15 Oct 2019 10:55:17 -0500
+Subject: [PATCH] 4.1 race condition in pci enable- disable device
+
+---
+ drivers/pci/pci.c   | 31 ++++++++++++++++++++++++-------
+ drivers/pci/probe.c |  1 +
+ include/linux/pci.h |  1 +
+ 3 files changed, 26 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/pci/pci.c b/drivers/pci/pci.c
+index 4e720ed..5bd4580 100644
+--- a/drivers/pci/pci.c
++++ b/drivers/pci/pci.c
+@@ -1254,7 +1254,8 @@ static void pci_enable_bridge(struct pci_dev *dev)
+ {
+ 	struct pci_dev *bridge;
+ 	int retval;
+-
++        
++        mutex_lock(&dev->enable_mutex);
+ 	bridge = pci_upstream_bridge(dev);
+ 	if (bridge)
+ 		pci_enable_bridge(bridge);
+@@ -1262,6 +1263,7 @@ static void pci_enable_bridge(struct pci_dev *dev)
+ 	if (pci_is_enabled(dev)) {
+ 		if (!dev->is_busmaster)
+ 			pci_set_master(dev);
++                mutex_unlock(&dev->enable_mutex);
+ 		return;
+ 	}
+ 
+@@ -1270,6 +1272,7 @@ static void pci_enable_bridge(struct pci_dev *dev)
+ 		dev_err(&dev->dev, "Error enabling bridge (%d), continuing\n",
+ 			retval);
+ 	pci_set_master(dev);
++        mutex_unlock(&dev->enable_mutex);
+ }
+ 
+ static int pci_enable_device_flags(struct pci_dev *dev, unsigned long flags)
+@@ -1277,6 +1280,8 @@ static int pci_enable_device_flags(struct pci_dev *dev, unsigned long flags)
+ 	struct pci_dev *bridge;
+ 	int err;
+ 	int i, bars = 0;
++        /* Enable-locking of bridges is performed within the pci_enable_bridge() */
++	bool need_lock = !dev->subordinate;
+ 
+ 	/*
+ 	 * Power state could be unknown at this point, either due to a fresh
+@@ -1290,8 +1295,13 @@ static int pci_enable_device_flags(struct pci_dev *dev, unsigned long flags)
+ 		dev->current_state = (pmcsr & PCI_PM_CTRL_STATE_MASK);
+ 	}
+ 
+-	if (atomic_inc_return(&dev->enable_cnt) > 1)
+-		return 0;		/* already enabled */
++        if (need_lock)
++		mutex_lock(&dev->enable_mutex);
++	if (pci_is_enabled(dev)) {
++		if (need_lock)
++			mutex_unlock(&dev->enable_mutex);
++ 		return 0;		/* already enabled */
++	}
+ 
+ 	bridge = pci_upstream_bridge(dev);
+ 	if (bridge)
+@@ -1306,8 +1316,10 @@ static int pci_enable_device_flags(struct pci_dev *dev, unsigned long flags)
+ 			bars |= (1 << i);
+ 
+ 	err = do_pci_enable_device(dev, bars);
+-	if (err < 0)
+-		atomic_dec(&dev->enable_cnt);
++	if (err >= 0)
++		atomic_inc(&dev->enable_cnt);
++	if (need_lock)
++		mutex_unlock(&dev->enable_mutex);
+ 	return err;
+ }
+ 
+@@ -1546,15 +1558,20 @@ void pci_disable_device(struct pci_dev *dev)
+ 	if (dr)
+ 		dr->enabled = 0;
+ 
++        mutex_lock(&dev->enable_mutex); 
++
+ 	dev_WARN_ONCE(&dev->dev, atomic_read(&dev->enable_cnt) <= 0,
+ 		      "disabling already-disabled device");
+ 
+-	if (atomic_dec_return(&dev->enable_cnt) != 0)
+-		return;
++	if (atomic_dec_return(&dev->enable_cnt) != 0) {
++		mutex_unlock(&dev->enable_mutex);
++ 		return;
++	}
+ 
+ 	do_pci_disable_device(dev);
+ 
+ 	dev->is_busmaster = 0;
++        mutex_unlock(&dev->enable_mutex);
+ }
+ EXPORT_SYMBOL(pci_disable_device);
+ 
+diff --git a/drivers/pci/probe.c b/drivers/pci/probe.c
+index 993ff22..2f07c74 100644
+--- a/drivers/pci/probe.c
++++ b/drivers/pci/probe.c
+@@ -1440,6 +1440,7 @@ struct pci_dev *pci_alloc_dev(struct pci_bus *bus)
+ 	INIT_LIST_HEAD(&dev->bus_list);
+ 	dev->dev.type = &pci_dev_type;
+ 	dev->bus = pci_bus_get(bus);
++        mutex_init(&dev->enable_mutex);
+ 
+ 	return dev;
+ }
+diff --git a/include/linux/pci.h b/include/linux/pci.h
+index c800808..08aa447 100644
+--- a/include/linux/pci.h
++++ b/include/linux/pci.h
+@@ -361,6 +361,7 @@ struct pci_dev {
+ 	unsigned int	non_compliant_bars:1;	/* broken BARs; ignore them */
+ 	pci_dev_flags_t dev_flags;
+ 	atomic_t	enable_cnt;	/* pci_enable_device has been called */
++        struct mutex	enable_mutex;
+ 
+ 	u32		saved_config_space[16]; /* config space saved at suspend time */
+ 	struct hlist_head saved_cap_space;
+-- 
+1.8.3.1
+
