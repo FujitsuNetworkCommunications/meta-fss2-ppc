@@ -1,0 +1,155 @@
+From 844766bf16db4c5c7a4ae7231eebf62b55595374 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 9 Jan 2019 21:22:19 +0800
+Subject: [PATCH 1/2] support OTP record for shutdown blade ACCTON-657: Blade
+ reboots and recoveries automatically after thermal shutdown
+
+---
+ drivers/hwmon/accton_t600_cpld.c | 77 ++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 75 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index c636f63..98e07b1 100644
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -89,7 +89,8 @@ enum t600_cpld_sysfs_attributes {
+     USB_PWR_FAULT,
+     BOARD_PWR_GOOD,
+     PIU_MGMT_PWR_GOOD,
+-    PIU_THERMAL_CTRL
++    PIU_THERMAL_CTRL,
++    BOARD_OTP_STATUS,
+ };
+ static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
+              char *buf);
+@@ -113,6 +114,10 @@ static ssize_t show_thermal_ctrl(struct device *dev, struct device_attribute *da
+              char *buf);
+ static ssize_t set_thermal_ctrl(struct device *dev, struct device_attribute *da,
+                         const char *buf, size_t count);
++
++static ssize_t show_otpstatus(struct device *dev, struct device_attribute *da, char *buf);
++static ssize_t set_otpstatus(struct device *dev, struct device_attribute *da,
++                        const char *buf, size_t count);
+                         
+ /* sysfs attributes for hwmon 
+  */
+@@ -146,6 +151,10 @@ static SENSOR_DEVICE_ATTR(piu_mgmt_pwr_good, S_IRUGO, show_pwr_status, NULL, PIU
+ static SENSOR_DEVICE_ATTR(system_reset, S_IWUSR, NULL, reset, RESET);
+ /* boot status attribute */
+ static SENSOR_DEVICE_ATTR(bootup_status, S_IRUGO, show_bootstatus, NULL, BOOTUP_STATUS);
++
++/* OTP contorl */
++static SENSOR_DEVICE_ATTR(board_otp_status, S_IRUGO | S_IWUSR, show_otpstatus, set_otpstatus, BOARD_OTP_STATUS);
++
+ /* psu attributes*/
+ DECLARE_PSU_SENSOR_DEVICE_ATTR(1);
+ DECLARE_PSU_SENSOR_DEVICE_ATTR(2);
+@@ -178,7 +187,8 @@ static struct attribute *t600_cpld_attributes[] = {
+   &sensor_dev_attr_usb_pwr_fault.dev_attr.attr,
+   &sensor_dev_attr_board_pwr_good.dev_attr.attr,
+   &sensor_dev_attr_piu_mgmt_pwr_good.dev_attr.attr,
+-  &sensor_dev_attr_piu_thermal_ctrl.dev_attr.attr,  
++  &sensor_dev_attr_piu_thermal_ctrl.dev_attr.attr,
++  &sensor_dev_attr_board_otp_status.dev_attr.attr,
+   NULL
+ };
+ 
+@@ -413,6 +423,69 @@ exit:
+     mutex_unlock(&data->update_lock);
+     return status;  
+ }
++
++static ssize_t show_otpstatus(struct device *dev, struct device_attribute *da,
++             char *buf)
++{
++    int status = 0;
++
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, OTP_RECORD_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++    return sprintf(buf, "%d\n", ((status & 0x04)? 1:0));
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++}
++
++static ssize_t set_otpstatus(struct device *dev, struct device_attribute *da,
++                        const char *buf, size_t count)
++{
++    int status = 0, otp_status = 0;
++    u8 regval=0;
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++
++    status = kstrtoint(buf, 10, &otp_status);
++    if (status) {
++        return status;
++    }
++
++    if ((otp_status != 0) && (otp_status != 1)) {
++        return -EINVAL;
++    }
++
++    mutex_lock(&data->update_lock);
++
++    status = t600_cpld_read(client, OTP_RECORD_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++
++    if (otp_status == 1)   /* Bit2: OTP record, 1: assert for OTP */
++        regval = status | 0x4;
++    else
++        regval = status & 0xFB;
++
++    status = t600_cpld_write(client, OTP_RECORD_REG, regval);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++
++    mutex_unlock(&data->update_lock);
++    return count;
++
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++}
++
+ static ssize_t show_psu(struct device *dev, struct device_attribute *da,
+              char *buf)
+ {
+-- 
+1.9.1
+
+
+From a54c0cffa3bd71d7aa27d885eb061be868c37322 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Fri, 18 Jan 2019 19:44:57 +0800
+Subject: [PATCH 2/2] Modify check range. Zero is POWER_OFF.
+
+---
+ drivers/hwmon/accton_t600_cpld.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index 98e07b1..5dbe8a3 100644
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -396,7 +396,7 @@ int t600_reset(int reset_type)
+ 		return -1;
+ 	}
+ 
+-	if(reset_type < 1 || reset_type > 2){
++	if(reset_type < 0 || reset_type > 2){
+ 		return -1;
+ 	}
+ 
+-- 
+1.9.1
+

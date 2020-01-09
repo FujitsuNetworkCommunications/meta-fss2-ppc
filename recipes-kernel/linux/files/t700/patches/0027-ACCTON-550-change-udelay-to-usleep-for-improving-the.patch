@@ -1,0 +1,62 @@
+From f188945ae36d30a9f7c2277e1a4ae1a18cec7cda Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Mon, 17 Dec 2018 19:30:49 +0800
+Subject: [PATCH] ACCTON-550: change udelay to usleep for improving the MDEC
+ access performance
+
+---
+ drivers/misc/accton_t600_fj_mdec.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index a3779ed..d2173c1 100644
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -240,7 +240,7 @@ static u32 mdio_access(struct device* dev, u32 mode, u32 page, u32 address, u32
+     {
+         status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_BUS_BUSY); // read MDIO busy status
+         if(status == MDIO_STATUS_BUSY){
+-            udelay(10);
++            usleep_range(10, 20);
+         }
+         else{
+             break;
+@@ -298,7 +298,7 @@ MDIO_READ_BEGIN:
+         {
+             status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_BUS_BUSY); // read MDIO busy status
+             if(status == MDIO_STATUS_BUSY){
+-                udelay(10);
++                usleep_range(10, 20);
+             }
+             else{
+                 break;
+@@ -702,7 +702,7 @@ static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8
+               break;
+         }
+ 
+-        udelay(200);
++        usleep_range(200, 400);
+         if(i == (I2C_CHK_BUS_BUSY_RETRY_COUNT -1))
+         {
+             printk(KERN_ERR "I2C bus is busy, retry 200 timeout \r\n");
+@@ -774,7 +774,7 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+             // NOT BUSY
+             break;
+         }
+-        udelay(200);
++        usleep_range(200, 400);
+ #if 0
+         printk(KERN_DEBUG "[DEBUG] I2C bus busy, 2retry count =%d\r\n", i + 1);
+ #endif
+@@ -790,7 +790,7 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+             
+         for(j = 0; j < I2C_CHK_BUS_BUSY_RETRY_COUNT ; j++)
+         {
+-            udelay(200);
++            usleep_range(200, 400);
+             status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_BUSY + (port << 16)); //0x00An0130, n means port
+             if(status == 0)
+             {
+-- 
+1.9.1
+

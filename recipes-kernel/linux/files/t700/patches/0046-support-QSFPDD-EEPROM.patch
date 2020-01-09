@@ -1,0 +1,254 @@
+From 5d5211b2473c028080afe356b4048e8e6b325b9f Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Mon, 9 Sep 2019 09:44:15 +0800
+Subject: [PATCH] support QSFPDD EEPROM Add page 17 of port eeprom for QSFP-DD.
+
+---
+ drivers/misc/accton_t600_fj_mdec.c | 91 +++++++++++++++++++++++++++++++++-----
+ 1 file changed, 81 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index 6ed77a4..c095965 100644
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -138,11 +138,13 @@ enum fpga_register_map
+ 
+ enum fpga_sysfs_attributes
+ {
+-    CPLD_VERSION_ATTR, DCO_MDIO_OFFSET_ATTR, DCO_MDIO_ATTR, MDEC_OFFSET_ATTR, MDEC_ATTR, MDEC_EEPROM_ATTR, TEMP1_INPUT, TEMP2_INPUT, QSFP_OFFSET_ATTR, QSFP_ATTR, PORT1_EEPROM_0, PORT1_EEPROM_1, PORT1_EEPROM_2, PORT1_EEPROM_3,
+-    PORT2_EEPROM_0, PORT2_EEPROM_1, PORT2_EEPROM_2, PORT2_EEPROM_3, PORT3_EEPROM_0, PORT3_EEPROM_1, PORT3_EEPROM_2, PORT3_EEPROM_3, PORT4_EEPROM_0, PORT4_EEPROM_1, PORT4_EEPROM_2, PORT4_EEPROM_3,
+-    PORT5_EEPROM_0, PORT5_EEPROM_1, PORT5_EEPROM_2, PORT5_EEPROM_3, PORT6_EEPROM_0, PORT6_EEPROM_1, PORT6_EEPROM_2, PORT6_EEPROM_3, PORT7_EEPROM_0, PORT7_EEPROM_1, PORT7_EEPROM_2, PORT7_EEPROM_3,
+-    PORT8_EEPROM_0, PORT8_EEPROM_1, PORT8_EEPROM_2, PORT8_EEPROM_3, PORT9_EEPROM_0, PORT9_EEPROM_1, PORT9_EEPROM_2, PORT9_EEPROM_3, PORT10_EEPROM_0, PORT10_EEPROM_1, PORT10_EEPROM_2, PORT10_EEPROM_3,
+-    PORT11_EEPROM_0, PORT11_EEPROM_1, PORT11_EEPROM_2, PORT11_EEPROM_3, PORT12_EEPROM_0, PORT12_EEPROM_1, PORT12_EEPROM_2, PORT12_EEPROM_3, 
++    CPLD_VERSION_ATTR, DCO_MDIO_OFFSET_ATTR, DCO_MDIO_ATTR, MDEC_OFFSET_ATTR, MDEC_ATTR, MDEC_EEPROM_ATTR, TEMP1_INPUT, TEMP2_INPUT, QSFP_OFFSET_ATTR, QSFP_ATTR,
++    PORT1_EEPROM_0, PORT1_EEPROM_1, PORT1_EEPROM_2, PORT1_EEPROM_3, PORT1_EEPROM_17, PORT2_EEPROM_0, PORT2_EEPROM_1, PORT2_EEPROM_2, PORT2_EEPROM_3, PORT2_EEPROM_17,
++    PORT3_EEPROM_0, PORT3_EEPROM_1, PORT3_EEPROM_2, PORT3_EEPROM_3, PORT3_EEPROM_17, PORT4_EEPROM_0, PORT4_EEPROM_1, PORT4_EEPROM_2, PORT4_EEPROM_3, PORT4_EEPROM_17,
++    PORT5_EEPROM_0, PORT5_EEPROM_1, PORT5_EEPROM_2, PORT5_EEPROM_3, PORT5_EEPROM_17, PORT6_EEPROM_0, PORT6_EEPROM_1, PORT6_EEPROM_2, PORT6_EEPROM_3, PORT6_EEPROM_17,
++    PORT7_EEPROM_0, PORT7_EEPROM_1, PORT7_EEPROM_2, PORT7_EEPROM_3, PORT7_EEPROM_17, PORT8_EEPROM_0, PORT8_EEPROM_1, PORT8_EEPROM_2, PORT8_EEPROM_3, PORT8_EEPROM_17,
++    PORT9_EEPROM_0, PORT9_EEPROM_1, PORT9_EEPROM_2, PORT9_EEPROM_3, PORT9_EEPROM_17, PORT10_EEPROM_0, PORT10_EEPROM_1, PORT10_EEPROM_2, PORT10_EEPROM_3, PORT10_EEPROM_17,
++    PORT11_EEPROM_0, PORT11_EEPROM_1, PORT11_EEPROM_2, PORT11_EEPROM_3, PORT11_EEPROM_17, PORT12_EEPROM_0, PORT12_EEPROM_1, PORT12_EEPROM_2, PORT12_EEPROM_3, PORT12_EEPROM_17,
+     PIU1_DCO_MDIO_LOCK, PIU2_DCO_MDIO_LOCK, PIU1_QSFP_LOCK, PIU2_QSFP_LOCK, MDEC_LOCK, PIU_RESCAN_LOCK,
+ };
+ 
+@@ -649,6 +651,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT1_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT1_HEX, eerpom_buf);
+              break;
++        case PORT1_EEPROM_17:     // port1, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT1_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT1_HEX, eerpom_buf);
++             break;
+         case PORT2_EEPROM_0:     // port2, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT2_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT2_HEX, eerpom_buf);
+@@ -665,6 +671,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT2_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT2_HEX, eerpom_buf);
+              break;
++        case PORT2_EEPROM_17:     // port2, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT2_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT2_HEX, eerpom_buf);
++             break;
+         case PORT3_EEPROM_0:     // port3, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT3_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT3_HEX, eerpom_buf);
+@@ -681,6 +691,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT3_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT3_HEX, eerpom_buf);
+              break;
++        case PORT3_EEPROM_17:     // port3, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT3_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT3_HEX, eerpom_buf);
++             break;
+         case PORT4_EEPROM_0:     // port4, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT4_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT4_HEX, eerpom_buf);
+@@ -697,6 +711,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT4_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT4_HEX, eerpom_buf);
+              break;
++        case PORT4_EEPROM_17:     // port4, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT4_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT4_HEX, eerpom_buf);
++             break;
+         case PORT5_EEPROM_0:     // port5, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT5_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT5_HEX, eerpom_buf);
+@@ -713,6 +731,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT5_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT5_HEX, eerpom_buf);
+              break;
++        case PORT5_EEPROM_17:     // port5, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT5_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT5_HEX, eerpom_buf);
++             break;
+         case PORT6_EEPROM_0:     // port6, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT6_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT6_HEX, eerpom_buf);
+@@ -729,6 +751,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT6_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT6_HEX, eerpom_buf);
+              break;
++        case PORT6_EEPROM_17:     // port6, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT6_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT6_HEX, eerpom_buf);
++             break;
+         case PORT7_EEPROM_0:     // port7, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT7_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT7_HEX, eerpom_buf);
+@@ -745,6 +771,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT7_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT7_HEX, eerpom_buf);
+              break;
++        case PORT7_EEPROM_17:     // port7, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT7_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT7_HEX, eerpom_buf);
++             break;
+         case PORT8_EEPROM_0:     // port8, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT8_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT8_HEX, eerpom_buf);
+@@ -761,6 +791,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT8_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT8_HEX, eerpom_buf);
+              break;
++        case PORT8_EEPROM_17:     // port8, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT8_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT8_HEX, eerpom_buf);
++             break;
+         case PORT9_EEPROM_0:     // port9, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT9_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT9_HEX, eerpom_buf);
+@@ -777,6 +811,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT9_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT9_HEX, eerpom_buf);
+              break;
++        case PORT9_EEPROM_17:     // port9, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT9_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT9_HEX, eerpom_buf);
++             break;
+         case PORT10_EEPROM_0:     // port10, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT10_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT10_HEX, eerpom_buf);
+@@ -793,6 +831,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT10_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT10_HEX, eerpom_buf);
+              break;
++        case PORT10_EEPROM_17:     // port10, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT10_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT10_HEX, eerpom_buf);
++             break;
+         case PORT11_EEPROM_0:     // port11, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT11_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT11_HEX, eerpom_buf);
+@@ -809,6 +851,10 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT11_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT11_HEX, eerpom_buf);
+              break;
++        case PORT11_EEPROM_17:     // port11, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT11_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT11_HEX, eerpom_buf);
++             break;
+         case PORT12_EEPROM_0:     // port12, page0
+              write_port_eeprom_one_byte(fpga_dev, PORT12_HEX, POS_127_HEX, 0x00);
+              read_port_eeprom_data(fpga_dev, PORT12_HEX, eerpom_buf);
+@@ -825,7 +871,12 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+              write_port_eeprom_one_byte(fpga_dev, PORT12_HEX, POS_127_HEX, 0x03);
+              read_port_eeprom_data(fpga_dev, PORT12_HEX, eerpom_buf);
+              break;
++        case PORT12_EEPROM_17:     // port12, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT12_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT12_HEX, eerpom_buf);
++             break;
+         default:
++             printk(KERN_ERR "[ERR] Unknow index: %d \r\n", dev_attr->index);
+              break;
+     }
+ 
+@@ -1022,59 +1073,79 @@ DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(17);
+ DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(0);
+ DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(1);
+ DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(17);
+ 
+ static struct attribute* sysfs_attributes[] = 
+ {
+     &sensor_dev_attr_cpld_version.dev_attr.attr, &sensor_dev_attr_dco_mdio_offset.dev_attr.attr, &sensor_dev_attr_dco_mdio.dev_attr.attr, &sensor_dev_attr_mdec_offset.dev_attr.attr, &sensor_dev_attr_mdec.dev_attr.attr, &sensor_dev_attr_mdec_eeprom.dev_attr.attr, &sensor_dev_attr_temp1_input.dev_attr.attr, &sensor_dev_attr_temp2_input.dev_attr.attr,
+-    &sensor_dev_attr_qsfp_offset.dev_attr.attr, &sensor_dev_attr_qsfp.dev_attr.attr, DECLARE_PORT1_EEPROM_ATTR(0), DECLARE_PORT1_EEPROM_ATTR(1), DECLARE_PORT1_EEPROM_ATTR(2), DECLARE_PORT1_EEPROM_ATTR(3),
+-    DECLARE_PORT2_EEPROM_ATTR(0), DECLARE_PORT2_EEPROM_ATTR(1), DECLARE_PORT2_EEPROM_ATTR(2), DECLARE_PORT2_EEPROM_ATTR(3),DECLARE_PORT3_EEPROM_ATTR(0), DECLARE_PORT3_EEPROM_ATTR(1), DECLARE_PORT3_EEPROM_ATTR(2), DECLARE_PORT3_EEPROM_ATTR(3),DECLARE_PORT4_EEPROM_ATTR(0), DECLARE_PORT4_EEPROM_ATTR(1), DECLARE_PORT4_EEPROM_ATTR(2), DECLARE_PORT4_EEPROM_ATTR(3),
+-    DECLARE_PORT5_EEPROM_ATTR(0), DECLARE_PORT5_EEPROM_ATTR(1), DECLARE_PORT5_EEPROM_ATTR(2), DECLARE_PORT5_EEPROM_ATTR(3),DECLARE_PORT6_EEPROM_ATTR(0), DECLARE_PORT6_EEPROM_ATTR(1), DECLARE_PORT6_EEPROM_ATTR(2), DECLARE_PORT6_EEPROM_ATTR(3),DECLARE_PORT7_EEPROM_ATTR(0), DECLARE_PORT7_EEPROM_ATTR(1), DECLARE_PORT7_EEPROM_ATTR(2), DECLARE_PORT7_EEPROM_ATTR(3),
+-    DECLARE_PORT8_EEPROM_ATTR(0), DECLARE_PORT8_EEPROM_ATTR(1), DECLARE_PORT8_EEPROM_ATTR(2), DECLARE_PORT8_EEPROM_ATTR(3),DECLARE_PORT9_EEPROM_ATTR(0), DECLARE_PORT9_EEPROM_ATTR(1), DECLARE_PORT9_EEPROM_ATTR(2), DECLARE_PORT9_EEPROM_ATTR(3),DECLARE_PORT10_EEPROM_ATTR(0), DECLARE_PORT10_EEPROM_ATTR(1), DECLARE_PORT10_EEPROM_ATTR(2), DECLARE_PORT10_EEPROM_ATTR(3),
+-    DECLARE_PORT11_EEPROM_ATTR(0), DECLARE_PORT11_EEPROM_ATTR(1), DECLARE_PORT11_EEPROM_ATTR(2), DECLARE_PORT11_EEPROM_ATTR(3),DECLARE_PORT12_EEPROM_ATTR(0), DECLARE_PORT12_EEPROM_ATTR(1), DECLARE_PORT12_EEPROM_ATTR(2), DECLARE_PORT12_EEPROM_ATTR(3),
++    &sensor_dev_attr_qsfp_offset.dev_attr.attr, &sensor_dev_attr_qsfp.dev_attr.attr,
++    DECLARE_PORT1_EEPROM_ATTR(0), DECLARE_PORT1_EEPROM_ATTR(1), DECLARE_PORT1_EEPROM_ATTR(2), DECLARE_PORT1_EEPROM_ATTR(3), DECLARE_PORT1_EEPROM_ATTR(17),
++    DECLARE_PORT2_EEPROM_ATTR(0), DECLARE_PORT2_EEPROM_ATTR(1), DECLARE_PORT2_EEPROM_ATTR(2), DECLARE_PORT2_EEPROM_ATTR(3), DECLARE_PORT2_EEPROM_ATTR(17),
++    DECLARE_PORT3_EEPROM_ATTR(0), DECLARE_PORT3_EEPROM_ATTR(1), DECLARE_PORT3_EEPROM_ATTR(2), DECLARE_PORT3_EEPROM_ATTR(3), DECLARE_PORT3_EEPROM_ATTR(17),
++    DECLARE_PORT4_EEPROM_ATTR(0), DECLARE_PORT4_EEPROM_ATTR(1), DECLARE_PORT4_EEPROM_ATTR(2), DECLARE_PORT4_EEPROM_ATTR(3), DECLARE_PORT4_EEPROM_ATTR(17),
++    DECLARE_PORT5_EEPROM_ATTR(0), DECLARE_PORT5_EEPROM_ATTR(1), DECLARE_PORT5_EEPROM_ATTR(2), DECLARE_PORT5_EEPROM_ATTR(3), DECLARE_PORT5_EEPROM_ATTR(17),
++    DECLARE_PORT6_EEPROM_ATTR(0), DECLARE_PORT6_EEPROM_ATTR(1), DECLARE_PORT6_EEPROM_ATTR(2), DECLARE_PORT6_EEPROM_ATTR(3), DECLARE_PORT6_EEPROM_ATTR(17),
++    DECLARE_PORT7_EEPROM_ATTR(0), DECLARE_PORT7_EEPROM_ATTR(1), DECLARE_PORT7_EEPROM_ATTR(2), DECLARE_PORT7_EEPROM_ATTR(3), DECLARE_PORT7_EEPROM_ATTR(17),
++    DECLARE_PORT8_EEPROM_ATTR(0), DECLARE_PORT8_EEPROM_ATTR(1), DECLARE_PORT8_EEPROM_ATTR(2), DECLARE_PORT8_EEPROM_ATTR(3), DECLARE_PORT8_EEPROM_ATTR(17),
++    DECLARE_PORT9_EEPROM_ATTR(0), DECLARE_PORT9_EEPROM_ATTR(1), DECLARE_PORT9_EEPROM_ATTR(2), DECLARE_PORT9_EEPROM_ATTR(3), DECLARE_PORT9_EEPROM_ATTR(17),
++    DECLARE_PORT10_EEPROM_ATTR(0), DECLARE_PORT10_EEPROM_ATTR(1), DECLARE_PORT10_EEPROM_ATTR(2), DECLARE_PORT10_EEPROM_ATTR(3), DECLARE_PORT10_EEPROM_ATTR(17),
++    DECLARE_PORT11_EEPROM_ATTR(0), DECLARE_PORT11_EEPROM_ATTR(1), DECLARE_PORT11_EEPROM_ATTR(2), DECLARE_PORT11_EEPROM_ATTR(3), DECLARE_PORT11_EEPROM_ATTR(17),
++    DECLARE_PORT12_EEPROM_ATTR(0), DECLARE_PORT12_EEPROM_ATTR(1), DECLARE_PORT12_EEPROM_ATTR(2), DECLARE_PORT12_EEPROM_ATTR(3), DECLARE_PORT12_EEPROM_ATTR(17),
+     &sensor_dev_attr_app_locked.dev_attr.attr, 
+     &sensor_dev_attr_app_piu1_dco_mdio_locked.dev_attr.attr, &sensor_dev_attr_app_piu2_dco_mdio_locked.dev_attr.attr, 
+     &sensor_dev_attr_app_piu1_qsfp_locked.dev_attr.attr, &sensor_dev_attr_app_piu2_qsfp_locked.dev_attr.attr,
+-- 
+1.9.1
+

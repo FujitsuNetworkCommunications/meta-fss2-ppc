@@ -1,0 +1,85 @@
+From 563eec9350c4be40384bf0afe3d4554e878459eb Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Tue, 13 Nov 2018 16:40:55 +0800
+Subject: [PATCH] add protection for multi processes access the MDEC. Add sys
+ attribute node with mutex. Application can lock/unlock by this attribute.
+
+---
+ drivers/misc/accton_t600_fj_mdec.c | 33 ++++++++++++++++++++++++++++++++-
+ 1 file changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index 51a2b65..b336240 100644
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -145,6 +145,7 @@ struct fpga_device
+ {
+     char __iomem* hw_addr;
+     struct mutex driver_lock;
++    struct mutex app_lock;
+     struct device dev;
+ };
+ 
+@@ -421,6 +422,32 @@ static ssize_t qsfp_action_store(struct device* dev, struct device_attribute* at
+     return count;
+ }
+ 
++static ssize_t app_lock_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    u32 is_locked;
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++
++    if(sscanf(buf, "%d", &is_locked) != 1)
++    {
++        return  - EINVAL;
++    }
++
++    if((is_locked < 0) || (is_locked > 1))
++    {
++        return  - EINVAL;
++    }
++
++    if(is_locked)
++    {
++        mutex_lock(&fpga_dev->app_lock);
++    }
++    else
++    {
++        mutex_unlock(&fpga_dev->app_lock);
++    }
++
++    return count;
++}
+ static ssize_t temp_show(struct device* dev, struct device_attribute* attr, char* buf)
+ {
+     struct sensor_device_attribute* dev_attr = to_sensor_dev_attr(attr);
+@@ -781,6 +808,7 @@ static SENSOR_DEVICE_ATTR(mdec, S_IRUGO, mdec_read_result, NULL, MDEC_ATTR);
+ static SENSOR_DEVICE_ATTR(mdec_eeprom, S_IRUGO, read_mdec_eeprom, NULL, MDEC_EEPROM_ATTR);
+ static SENSOR_DEVICE_ATTR(qsfp_offset, S_IWUSR, NULL, qsfp_action_store, QSFP_OFFSET_ATTR);
+ static SENSOR_DEVICE_ATTR(qsfp, S_IRUGO, qsfp_read_result, NULL, QSFP_ATTR);
++static SENSOR_DEVICE_ATTR(app_locked, S_IWUSR, NULL, app_lock_store, 0);
+ 
+ #define DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(index) \
+ static SENSOR_DEVICE_ATTR(port1_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT1_EEPROM_##index);
+@@ -875,7 +903,9 @@ static struct attribute* sysfs_attributes[] =
+     DECLARE_PORT2_EEPROM_ATTR(0), DECLARE_PORT2_EEPROM_ATTR(1), DECLARE_PORT2_EEPROM_ATTR(2), DECLARE_PORT2_EEPROM_ATTR(3),DECLARE_PORT3_EEPROM_ATTR(0), DECLARE_PORT3_EEPROM_ATTR(1), DECLARE_PORT3_EEPROM_ATTR(2), DECLARE_PORT3_EEPROM_ATTR(3),DECLARE_PORT4_EEPROM_ATTR(0), DECLARE_PORT4_EEPROM_ATTR(1), DECLARE_PORT4_EEPROM_ATTR(2), DECLARE_PORT4_EEPROM_ATTR(3),
+     DECLARE_PORT5_EEPROM_ATTR(0), DECLARE_PORT5_EEPROM_ATTR(1), DECLARE_PORT5_EEPROM_ATTR(2), DECLARE_PORT5_EEPROM_ATTR(3),DECLARE_PORT6_EEPROM_ATTR(0), DECLARE_PORT6_EEPROM_ATTR(1), DECLARE_PORT6_EEPROM_ATTR(2), DECLARE_PORT6_EEPROM_ATTR(3),DECLARE_PORT7_EEPROM_ATTR(0), DECLARE_PORT7_EEPROM_ATTR(1), DECLARE_PORT7_EEPROM_ATTR(2), DECLARE_PORT7_EEPROM_ATTR(3),
+     DECLARE_PORT8_EEPROM_ATTR(0), DECLARE_PORT8_EEPROM_ATTR(1), DECLARE_PORT8_EEPROM_ATTR(2), DECLARE_PORT8_EEPROM_ATTR(3),DECLARE_PORT9_EEPROM_ATTR(0), DECLARE_PORT9_EEPROM_ATTR(1), DECLARE_PORT9_EEPROM_ATTR(2), DECLARE_PORT9_EEPROM_ATTR(3),DECLARE_PORT10_EEPROM_ATTR(0), DECLARE_PORT10_EEPROM_ATTR(1), DECLARE_PORT10_EEPROM_ATTR(2), DECLARE_PORT10_EEPROM_ATTR(3),
+-    DECLARE_PORT11_EEPROM_ATTR(0), DECLARE_PORT11_EEPROM_ATTR(1), DECLARE_PORT11_EEPROM_ATTR(2), DECLARE_PORT11_EEPROM_ATTR(3),DECLARE_PORT12_EEPROM_ATTR(0), DECLARE_PORT12_EEPROM_ATTR(1), DECLARE_PORT12_EEPROM_ATTR(2), DECLARE_PORT12_EEPROM_ATTR(3),NULL, 
++    DECLARE_PORT11_EEPROM_ATTR(0), DECLARE_PORT11_EEPROM_ATTR(1), DECLARE_PORT11_EEPROM_ATTR(2), DECLARE_PORT11_EEPROM_ATTR(3),DECLARE_PORT12_EEPROM_ATTR(0), DECLARE_PORT12_EEPROM_ATTR(1), DECLARE_PORT12_EEPROM_ATTR(2), DECLARE_PORT12_EEPROM_ATTR(3),
++    &sensor_dev_attr_app_locked.dev_attr.attr,
++    NULL,
+ };
+ 
+ static const struct attribute_group sysfs_group = 
+@@ -922,6 +952,7 @@ static int accton_fpga_probe(struct pci_dev* pdev, const struct pci_device_id* d
+         goto err_out_int;
+     }
+     mutex_init(&fpga_dev->driver_lock);
++    mutex_init(&fpga_dev->app_lock);
+ 
+     pci_set_drvdata(pdev, fpga_dev);
+ 
+-- 
+1.9.1
+

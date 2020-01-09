@@ -1,0 +1,268 @@
+From c8f819b4c60d45fad769fd80271a1025701829ac Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Fri, 17 Aug 2018 00:36:32 +0800
+Subject: [PATCH] support ps_shutdown
+
+---
+ arch/powerpc/sysdev/Makefile     |  2 +-
+ arch/powerpc/sysdev/fsl_soc.c    | 57 ++++++++++++++-------------
+ arch/powerpc/sysdev/fss2_reset.c | 84 ++++++++++++++++++++++++++++++++++++++++
+ drivers/hwmon/accton_t600_cpld.c | 28 +++++++++++---
+ 4 files changed, 136 insertions(+), 35 deletions(-)
+ create mode 100644 arch/powerpc/sysdev/fss2_reset.c
+
+diff --git a/arch/powerpc/sysdev/Makefile b/arch/powerpc/sysdev/Makefile
+index b91e758..7364991 100644
+--- a/arch/powerpc/sysdev/Makefile
++++ b/arch/powerpc/sysdev/Makefile
+@@ -17,7 +17,7 @@ obj-$(CONFIG_PPC_DCR_NATIVE)	+= dcr-low.o
+ obj-$(CONFIG_PPC_PMI)		+= pmi.o
+ obj-$(CONFIG_U3_DART)		+= dart_iommu.o
+ obj-$(CONFIG_MMIO_NVRAM)	+= mmio_nvram.o
+-obj-$(CONFIG_FSL_SOC)		+= fsl_soc.o fsl_mpic_err.o
++obj-$(CONFIG_FSL_SOC)		+= fss2_reset.o fsl_soc.o fsl_mpic_err.o
+ obj-$(CONFIG_FSL_LBC)		+= fsl_lbc.o
+ obj-$(CONFIG_FSL_PCI)		+= fsl_pci.o $(fsl-msi-obj-y)
+ obj-$(CONFIG_FSL_PMC)		+= fsl_pmc.o
+diff --git a/arch/powerpc/sysdev/fsl_soc.c b/arch/powerpc/sysdev/fsl_soc.c
+index c98ca29..a743158 100644
+--- a/arch/powerpc/sysdev/fsl_soc.c
++++ b/arch/powerpc/sysdev/fsl_soc.c
+@@ -259,42 +259,41 @@ arch_initcall(of_add_fixed_phys);
+ #endif /* CONFIG_FIXED_PHY */
+ 
+ #if defined(CONFIG_FSL_SOC_BOOKE) || defined(CONFIG_PPC_86xx)
+-static __be32 __iomem *rstcr;
+ 
+-static int __init setup_rstcr(void)
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/module.h>
++#include <linux/syscalls.h>
++#include <linux/fcntl.h>
++#include <asm/uaccess.h>
++#include <asm-generic/ioctl.h>
++#include <linux/hdreg.h>
++#include <uapi/asm/ioctl.h>
++#include <linux/ioctl.h>
++#include <linux/ata.h>
++
++/*!
++** @brief Invoked at startup. Will allocate and map registers used during reset.
++**        linux reset     -> FNC Warm reset
++**        linux halt      -> FNC Hard Reset
++**        linux power off -> FNC Hard Reset
++*/
++extern void fss2_reset_warm(char *cmd);
++extern void fss2_reset_power_off(void);
++extern void fss2_reset_hard(void);
++
++static int __init setup_finity_reset(void)
+ {
+-	struct device_node *np;
+-
+-	for_each_node_by_name(np, "global-utilities") {
+-		if ((of_get_property(np, "fsl,has-rstcr", NULL))) {
+-			rstcr = of_iomap(np, 0) + 0xb0;
+-			if (!rstcr)
+-				printk (KERN_ERR "Error: reset control "
+-						"register not mapped!\n");
+-			break;
+-		}
+-	}
+-
+-	if (!rstcr && ppc_md.restart == fsl_rstcr_restart)
+-		printk(KERN_ERR "No RSTCR register, warm reboot won't work\n");
+-
+-	if (np)
+-		of_node_put(np);
++    ppc_md.restart    = fss2_reset_warm;         // Warm (default)
++    ppc_md.power_off  = fss2_reset_power_off;    // Hard
++    ppc_md.halt       = fss2_reset_hard;         // Hard
+ 
+ 	return 0;
+ }
+ 
+-arch_initcall(setup_rstcr);
++arch_initcall(setup_finity_reset);
+ 
+-void fsl_rstcr_restart(char *cmd)
+-{
+-	local_irq_disable();
+-	if (rstcr)
+-		/* set reset control register */
+-		out_be32(rstcr, 0x2);	/* HRESET_REQ */
+-
+-	while (1) ;
+-}
++void fsl_rstcr_restart(char *cmd) {}
+ #endif
+ 
+ struct platform_diu_data_ops diu_ops;
+diff --git a/arch/powerpc/sysdev/fss2_reset.c b/arch/powerpc/sysdev/fss2_reset.c
+new file mode 100644
+index 0000000..6208da6
+--- /dev/null
++++ b/arch/powerpc/sysdev/fss2_reset.c
+@@ -0,0 +1,84 @@
++/*
++ * FSS2 Linux reset patch stub. Vendor responsibility
++ *
++ * 
++ *
++ * 2018 (c) Fujitsu Network communications
++ * 
++ *
++ * This program is free software; you can redistribute  it and/or modify it
++ * under  the terms of  the GNU General  Public License as published by the
++ * Free Software Foundation;  either version 2 of the  License, or (at your
++ * option) any later version.
++ */
++
++#include <linux/stddef.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/errno.h>
++#include <linux/major.h>
++#include <linux/delay.h>
++#include <linux/irq.h>
++#include <linux/export.h>
++#include <linux/device.h>
++#include <linux/platform_device.h>
++#include <linux/of.h>
++#include <linux/of_platform.h>
++#include <linux/phy.h>
++#include <linux/phy_fixed.h>
++#include <linux/spi/spi.h>
++#include <linux/fsl_devices.h>
++#include <linux/fs_enet_pd.h>
++#include <linux/fs_uart_pd.h>
++
++#include <linux/atomic.h>
++#include <asm/io.h>
++#include <asm/irq.h>
++#include <asm/time.h>
++#include <asm/prom.h>
++#include <asm/machdep.h>
++#include <sysdev/fsl_soc.h>
++#include <mm/mmu_decl.h>
++#include <asm/cpm2.h>
++#include <asm/fsl_hcalls.h>	/* For the Freescale hypervisor */
++
++#define WARM_RESTART           2
++#define COLD_RESTART           1
++
++extern int t600_reset(int reset_type);
++
++/* FSS2 Reset Warm function stub */
++//static u32 fss2_reset_warm = -1;
++
++void fss2_reset_warm(char *cmd)
++{
++	int status;
++	status = t600_reset(WARM_RESTART);
++	return ;
++}
++
++EXPORT_SYMBOL(fss2_reset_warm);
++
++
++/* FSS2 Reset hard function stub */
++//static u32 fss2_reset_hard = -1;
++
++void fss2_reset_hard(void)
++{
++	int status;
++	status = t600_reset(COLD_RESTART);
++	return ;
++}
++
++EXPORT_SYMBOL(fss2_reset_hard);
++
++
++/* FSS2 Reset power_off function stub */
++//static u32 fss2_reset_power_off = -1;
++
++void fss2_reset_power_off(void)
++{
++	/* Not do anything */
++}
++
++EXPORT_SYMBOL(fss2_reset_power_off);
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index 51044c9..c9521af 100644
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -181,6 +181,8 @@ static struct attribute *t600_cpld_attributes[] = {
+   NULL
+ };
+ 
++struct device *t600_cpld_dev;
++
+ static const struct attribute_group t600_cpld_group = {
+     .attrs = t600_cpld_attributes,
+ };
+@@ -215,7 +217,6 @@ static int t600_cpld_write(struct i2c_client *client, u8 reg, u8 value)
+     return status;
+ }
+ 
+-
+ static ssize_t show_version(struct device *dev, struct device_attribute *da,
+              char *buf)
+ {
+@@ -332,6 +333,24 @@ exit:
+     return status;
+ }
+ 
++
++int t600_reset(int reset_type)
++{
++	const char data_buf[3][12] = {{'0', '\n'},{'1', '\n'},{ '2', '\n'}};
++
++	if(NULL == t600_cpld_dev){
++		return -1;
++	}
++
++	if(reset_type < 1 || reset_type > 2){
++		return -1;
++	}
++
++	return reset(t600_cpld_dev, NULL, data_buf[reset_type], 1);
++}
++
++EXPORT_SYMBOL(t600_reset);
++
+ static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
+              char *buf)
+ {
+@@ -447,7 +466,6 @@ exit:
+ static ssize_t show_thermal_ctrl(struct device *dev, struct device_attribute *da
+                         ,char *buf)
+ {
+-    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
+     struct i2c_client *client = to_i2c_client(dev);
+     struct t600_cpld_data *data = i2c_get_clientdata(client);
+     int value = 0, status = 0; 
+@@ -474,7 +492,6 @@ static ssize_t set_thermal_ctrl(struct device *dev, struct device_attribute *da,
+ {
+     int status = 0, thermal_ctrl = 0;
+     u8 regval=0;
+-    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
+     struct i2c_client *client = to_i2c_client(dev);
+     struct t600_cpld_data *data = i2c_get_clientdata(client);
+ 
+@@ -688,8 +705,9 @@ static int t600_cpld_probe(struct i2c_client *client,
+         goto exit_remove;
+     }
+ 
+-   dev_info(&client->dev, "%s: cpld '%s'\n",
+-         dev_name(data->hwmon_dev), client->name);
++    t600_cpld_dev = &client->dev;
++    dev_info(&client->dev, "%s: cpld '%s'\n",
++    dev_name(data->hwmon_dev), client->name);
+ 
+     return 0;
+ 
+-- 
+1.9.1
+
