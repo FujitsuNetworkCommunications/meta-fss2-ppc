@@ -444,6 +444,28 @@
 		sdhc@114000 {
 			voltage-ranges = <1800 1800 3300 3300>;
 		};
+
+		fpga-mdec1 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "fj,fpga-mdec";
+			reg = <0x02000000>;
+		};
+
+		fpga-mdec2 {
+			compatible = "fj,fpga-mdec";
+			reg = <0x04000000>;
+		};
+
+		fpga-mbcnt {
+			compatible = "fj,fpga-mbcnt";
+			reg = <0x06000000>;
+		};
+
+		fpga-cdec {
+			compatible = "fj,fpga-cdec";
+			reg = <0x40000000>;
+		};
 	};
 
 	pci0: pcie@ffe240000 {

@@ -187,6 +187,7 @@ SRC_URI_append_t700 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0053-Change-the-code-from-isync-to-asm-volatile-for-memor.patch  \
                         file://${MACHINE}/patches/0053-4.1-T600-3041-FIPS-disable-print-of-keys.patch              \
                         file://${MACHINE}/patches/0054-Send-ATA_CMD_IDLEIMMEDIATE-command-to-sda-when-syste.patch  \
+                        file://${MACHINE}/patches/0055-Fix-issue-ACCTON-947.patch                                  \
                        "
 
 

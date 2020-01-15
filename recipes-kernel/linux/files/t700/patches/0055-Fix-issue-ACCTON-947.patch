@@ -1,0 +1,390 @@
+From 648b408cb3f9e4379a3bf64852751be19d1336dc Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 15 Jan 2020 20:42:48 +0800
+Subject: [PATCH] Fix issue ACCTON-947. 1. Modify mdec driver from PCI driver
+ to platform driver.
+
+---
+ drivers/misc/accton_t600_fj_mdec.c | 246 ++++++++++++++++++++++++-------------
+ 1 file changed, 160 insertions(+), 86 deletions(-)
+ mode change 100644 => 100755 drivers/misc/accton_t600_fj_mdec.c
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+old mode 100644
+new mode 100755
+index 0e29abf..11414a1
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -35,6 +35,8 @@
+ #include <linux/interrupt.h>
+ #include <linux/unistd.h>
+ #include <linux/delay.h>
++#include <linux/of.h>
++#include <linux/of_device.h>
+ 
+ #define FPGA_MNG_I2C_WORKAROUND                                 0
+ #define DRIVER_NAME                                             "fujitsu_mdec_fpga"
+@@ -136,6 +138,12 @@ enum fpga_register_map
+     MDEC_EEPROM_ADD     = 0x00F00000,
+ };
+ 
++enum fpga_chips {
++    FJ_MDEC,
++    FJ_MBCNT,
++    FJ_CDEC,
++};
++
+ enum fpga_sysfs_attributes
+ {
+     CPLD_VERSION_ATTR, DCO_MDIO_OFFSET_ATTR, DCO_MDIO_ATTR, MDEC_OFFSET_ATTR, MDEC_ATTR, MDEC_EEPROM_ATTR, TEMP1_INPUT, TEMP2_INPUT, QSFP_OFFSET_ATTR, QSFP_ATTR,
+@@ -151,9 +159,7 @@ enum fpga_sysfs_attributes
+ struct fpga_device
+ {
+     char __iomem* hw_addr;
+-#if 0
+-    struct mutex driver_lock;
+-#endif
++
+     struct mutex app_lock;
+     struct mutex app_piu1_qsfp_lock;
+     struct mutex app_piu2_qsfp_lock;
+@@ -166,6 +172,8 @@ struct fpga_device
+     u32 mdec_read_result_data;
+     u16 mdio_read_result_data;
+     u8 qsfp_read_result_data;
++
++    u8 is_enable;
+ };
+ 
+ static struct mutex io_lock;
+@@ -174,11 +182,16 @@ static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8
+ static void read_port_eeprom_data(struct fpga_device* fpga_dev, u8 port, u8 *buffer);
+ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos);
+ 
++static ssize_t de_new_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count);
++static ssize_t de_del_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count);
++
+ /* =================== local subprogram bodies =================== */
+ static u32 t600_fj_mdec_read32(void *addr)
+ {
++    u32 value;
++
+     mutex_lock(&io_lock);
+-    u32 value = ioread32(addr);
++    value = ioread32(addr);
+     mutex_unlock(&io_lock);
+ 
+     return le32_to_cpu(value);
+@@ -1020,6 +1033,11 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+     return value;   
+ }
+ 
++/* root attribute */
++static SENSOR_DEVICE_ATTR(new_device, S_IWUSR, NULL, de_new_store, 0);
++static SENSOR_DEVICE_ATTR(delete_device, S_IWUSR, NULL, de_del_store, 0);
++
++/* fpga attribute */
+ static SENSOR_DEVICE_ATTR(cpld_version, S_IRUGO, cpld_version_show, NULL, CPLD_VERSION_ATTR);
+ static SENSOR_DEVICE_ATTR(dco_mdio_offset, S_IWUSR, NULL, mdio_action_store, DCO_MDIO_OFFSET_ATTR);
+ static SENSOR_DEVICE_ATTR(dco_mdio, S_IRUGO, mdio_read_result, NULL, DCO_MDIO_ATTR);
+@@ -1135,6 +1153,13 @@ DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(2);
+ DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(3);
+ DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(17);
+ 
++static struct attribute* root_attributes[] =
++{
++    &sensor_dev_attr_new_device.dev_attr.attr,
++    &sensor_dev_attr_delete_device.dev_attr.attr,
++    NULL,
++};
++
+ static struct attribute* sysfs_attributes[] = 
+ {
+     &sensor_dev_attr_cpld_version.dev_attr.attr, &sensor_dev_attr_dco_mdio_offset.dev_attr.attr, &sensor_dev_attr_dco_mdio.dev_attr.attr, &sensor_dev_attr_mdec_offset.dev_attr.attr, &sensor_dev_attr_mdec.dev_attr.attr, &sensor_dev_attr_mdec_eeprom.dev_attr.attr, &sensor_dev_attr_temp1_input.dev_attr.attr, &sensor_dev_attr_temp2_input.dev_attr.attr,
+@@ -1158,52 +1183,129 @@ static struct attribute* sysfs_attributes[] =
+     NULL,
+ };
+ 
+-static const struct attribute_group sysfs_group = 
++static const struct attribute_group root_group =
+ {
++    .attrs = root_attributes,
++};
++
++static const struct attribute_group fpga_group =
++{
++    .name = "fpga",
+     .attrs = sysfs_attributes, 
+ };
+ 
+ /* ==================== The Sysfs Interface Area [END] ==================== */
+ 
+-static int accton_fpga_probe(struct pci_dev* pdev, const struct pci_device_id* dev_id)
++static const struct of_device_id t600_fpga_of_match[] = {
++    {
++        .compatible = "fj,fpga-mdec",
++        .data = (void*)FJ_MDEC,
++    },
++    {
++        .compatible = "fj,fpga-mbcnt",
++        .data = (void*)FJ_MBCNT,
++    },
++    {
++        .compatible = "fj,fpga-cdec",
++        .data = (void*)FJ_CDEC,
++    },
++    {},
++};
++MODULE_DEVICE_TABLE(of, t600_fpga_of_match);
++
++static ssize_t de_new_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
+ {
+-    struct fpga_device* fpga_dev;
+-    int pci_dev_busy = 0;
+-    int rc =  - EBUSY;
+-    int i;
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    const struct of_device_id *of_id = of_match_device(t600_fpga_of_match, dev);
++    int rc, setting, i;
+ 
+-    dev_info(&pdev->dev, "%s v%s\n", DRIVER_DESCRIPTION_NAME, DRIVER_VERSION);
++    rc = kstrtoint(buf, 10, &setting);
++    if(rc){
++        return rc;
++    }
++    if(1 != setting){
++        return -EINVAL;
++    }
++    if(fpga_dev->is_enable){
++        dev_err(dev, "attrs created before.\r\n");
++        return -ENODATA;
++    }
+ 
+-    /* Enable pci dev. */
+-    rc = pci_enable_device(pdev);
+-    if(rc)
++    if(FJ_MDEC == (long)of_id->data)
+     {
+-        dev_err(&pdev->dev, "failed to enable pci device.\r\n");
++        /* T600 QSFP I2c access does not conflict. Set ModSelL. Always set ModSelL to 1.
++            Address is 0x00An0024. Port1:n=0x0~Port12:n=0xB */
++        for(i = 0; i < 12 ; i++)
++        {
++            t600_fj_mdec_write32(0x1, fpga_dev->hw_addr + HW_ModSelL + (i << 16));
++        }
++
++        /* Power on all port.
++           0: Power OFF(default)
++           1: Power ON
++           [0]: Port1 ~ [5]: Port6
++           [8]: Port7 ~ [13]: Port12
++        */
++        t600_fj_mdec_write32(0x00003F3F, fpga_dev->hw_addr + HW_VCC);
++    }
++
++    rc = sysfs_create_group(&dev->kobj, &fpga_group);
++    if(rc){
++        dev_err(dev, "failed to create attrs.\r\n");
++	return rc;
++    }
++
++    fpga_dev->is_enable = 1;
++
++    return count;
++}
++
++static ssize_t de_del_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    int rc, setting;
++
++    rc = kstrtoint(buf, 10, &setting);
++    if(rc){
+         return rc;
+-    } 
++    }
++    if(1 != setting){
++        return -EINVAL;
++    }
++    if(!fpga_dev->is_enable){
++        dev_err(dev, "attrs deleted before.\r\n");
++        return -ENODATA;
++    }
+ 
+-    /* Set PCI host mastering DMA. */
+-    pci_set_master(pdev);
++    sysfs_remove_group(&dev->kobj, &fpga_group);
++    fpga_dev->is_enable = 0;
+ 
+-    /* Make pci request regions for this driver. */
+-    rc = pci_request_regions(pdev, DRIVER_NAME);
+-    if(rc)
++    return count;
++}
++
++static int accton_fpga_probe(struct platform_device *pdev)
++{
++    struct fpga_device* fpga_dev;
++    const struct of_device_id *of_id = of_match_device(t600_fpga_of_match, &pdev->dev);
++    int rc =  - EBUSY;
++    u32 reg;
++
++    dev_info(&pdev->dev, "%s v%s\n", DRIVER_DESCRIPTION_NAME, DRIVER_VERSION);
++
++    if (!of_id)
+     {
+-        pci_dev_busy = 1;
+-        goto err_out;
++        dev_err(&pdev->dev, "unmatch ID.\r\n");
++        goto err_out_int;
+     }
+ 
+-    pci_intx(pdev, 1);
+ 
+-    fpga_dev = kzalloc(sizeof(*fpga_dev), GFP_KERNEL);
++    fpga_dev = devm_kzalloc(&pdev->dev, sizeof(*fpga_dev), GFP_KERNEL);
+     if(fpga_dev == NULL)
+     {
+         dev_err(&pdev->dev, "unable to allocate device memory.\r\n");
+         goto err_out_int;
+     }
+-#if 0
+-    mutex_init(&fpga_dev->driver_lock);
+-#endif
++
+     mutex_init(&fpga_dev->app_lock);
+     mutex_init(&fpga_dev->app_piu1_dco_mdio_lock);
+     mutex_init(&fpga_dev->app_piu2_dco_mdio_lock);
+@@ -1211,11 +1313,17 @@ static int accton_fpga_probe(struct pci_dev* pdev, const struct pci_device_id* d
+     mutex_init(&fpga_dev->app_piu2_qsfp_lock);
+     mutex_init(&fpga_dev->app_piu_rescan);
+     mutex_init(&io_lock);
++    fpga_dev->is_enable = 0;
+ 
+-    pci_set_drvdata(pdev, fpga_dev);
++    rc = of_property_read_u32(pdev->dev.of_node, "reg", &reg);
++    if(rc) {
++        dev_err(&pdev->dev, "invalid resource for node %s\n",
++            pdev->dev.of_node->full_name);
++        goto err_out_int;
++    }
+ 
+-    /* Remap the BAR0 address of PCI/PCI-E configuration space. */
+-    fpga_dev->hw_addr = pci_ioremap_bar(pdev, 0);
++    platform_set_drvdata(pdev, fpga_dev);
++    fpga_dev->hw_addr = ioremap_nocache((0xc00000000 | reg), 0x2000000);
+     if(!fpga_dev->hw_addr)
+     {
+         dev_err(&pdev->dev, "mapping I/O device memory failure.\r\n");
+@@ -1223,26 +1331,7 @@ static int accton_fpga_probe(struct pci_dev* pdev, const struct pci_device_id* d
+         goto err_out_free;
+     }
+ 
+-
+-    if(PCI_DEVICE_ID_MDEC == pdev->device)
+-    {
+-        /* T600 QSFP I2c access does not conflict. Set ModSelL. Always set ModSelL to 1.
+-            Address is 0x00An0024. Port1:n=0x0~Port12:n=0xB */
+-        for(i = 0; i < 12 ; i++)
+-        {
+-            t600_fj_mdec_write32(0x1, fpga_dev->hw_addr + HW_ModSelL + (i << 16));
+-        }
+-
+-        /* Power on all port.
+-           0: Power OFF(default)
+-           1: Power ON
+-           [0]: Port1 ~ [5]: Port6
+-           [8]: Port7 ~ [13]: Port12
+-        */
+-        t600_fj_mdec_write32(0x00003F3F, fpga_dev->hw_addr + HW_VCC);
+-    }
+-
+-    rc = sysfs_create_group(&pdev->dev.kobj, &sysfs_group);
++    rc = sysfs_create_group(&pdev->dev.kobj, &root_group);
+     if(rc)
+     {
+         dev_err(&pdev->dev, "failed to create attrs.\r\n");
+@@ -1253,32 +1342,28 @@ static int accton_fpga_probe(struct pci_dev* pdev, const struct pci_device_id* d
+     dev_dbg(&pdev->dev, "initialization successful.\r\n");
+     return 0;
+ 
+-    err_out_unmap: iounmap(fpga_dev->hw_addr);
+-    err_out_free: pci_set_drvdata(pdev, NULL);
++err_out_unmap:
++    iounmap(fpga_dev->hw_addr);
++err_out_free:
+     kfree(fpga_dev);
+-    err_out_int: pci_intx(pdev, 0);
+-    pci_release_regions(pdev);
+-    err_out: if(!pci_dev_busy)
+-    {
+-        pci_disable_device(pdev);
+-    }
++err_out_int:
+     dev_err(&pdev->dev, "initialization failed.\r\n");
+     return rc;
+ }
+ 
+-static void accton_fpga_remove(struct pci_dev* pdev)
++static int accton_fpga_remove(struct platform_device *pdev)
+ {
+-    struct fpga_device* fpga_dev = pci_get_drvdata(pdev);
++    struct fpga_device *fpga_dev = platform_get_drvdata(pdev);
+ 
+-    sysfs_remove_group(&pdev->dev.kobj, &sysfs_group);
+-    pci_set_drvdata(pdev, NULL);
++    if(fpga_dev->is_enable){
++        sysfs_remove_group(&pdev->dev.kobj, &fpga_group);
++    }
+ 
++    sysfs_remove_group(&pdev->dev.kobj, &root_group);
++    platform_set_drvdata(pdev, NULL);
+     iounmap(fpga_dev->hw_addr);
+-    pci_intx(pdev, 0);
+-    pci_release_regions(pdev);
+ 
+-    pci_disable_device(pdev);
+-    kfree(fpga_dev);
++    return 0;
+ } 
+ 
+ static const struct pci_device_id accton_fpga_tbl[] = 
+@@ -1300,27 +1385,16 @@ static const struct pci_device_id accton_fpga_tbl[] =
+ 
+ MODULE_DEVICE_TABLE(pci, accton_fpga_tbl);
+ 
+-static struct pci_driver accton_fpga_driver = 
+-{
+-    .name = DRIVER_NAME, .id_table = accton_fpga_tbl, .probe = accton_fpga_probe, .remove = accton_fpga_remove, 
++static struct platform_driver t600_fpga_driver = {
++	.driver = {
++		.name = DRIVER_NAME,
++		.of_match_table = of_match_ptr(t600_fpga_of_match),
++	},
++	.probe		= accton_fpga_probe,
++	.remove		= accton_fpga_remove,
+ };
+ 
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+-    module_pci_driver(accton_fpga_driver);
+-#else 
+-    static int __init accton_fpga_init(void)
+-    {
+-        return pci_register_driver(&accton_fpga_driver);
+-    }
+-
+-    static void __exit accton_fpga_exit(void)
+-    {
+-        pci_unregister_driver(&accton_fpga_driver);
+-    }
+-
+-    module_init(accton_fpga_init);
+-    module_exit(accton_fpga_exit);
+-#endif 
++module_platform_driver(t600_fpga_driver);
+ 
+ 
+ MODULE_AUTHOR("Vincent Wang");
+-- 
+1.9.1
+
