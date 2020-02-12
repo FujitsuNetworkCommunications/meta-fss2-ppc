@@ -3,6 +3,7 @@ From: roy_chuang <roy_chuang@edge.core.com>
 Date: Fri, 1 Nov 2019 16:49:22 +0800
 Subject: [PATCH 1/2] Send ATA_CMD_IDLEIMMEDIATE command to sda when system
  reset. Reference: patch from ACCTON-1066.
+ Note: Modified by peter.bugni@Fujitsu.com, for idle check change. Jan, 2020.
 
 ---
  drivers/hwmon/accton_t600_cpld.c | 53 +++++++++++++++++++++++++++++++++++++++-
@@ -12,7 +13,7 @@ diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
 index 5dbe8a3..0823ded 100755
 --- a/drivers/hwmon/accton_t600_cpld.c
 +++ b/drivers/hwmon/accton_t600_cpld.c
-@@ -32,6 +32,16 @@
+@@ -32,6 +32,17 @@
  #include <linux/sysfs.h>
  #include <linux/slab.h>
  #include <linux/delay.h>
@@ -26,13 +27,23 @@ index 5dbe8a3..0823ded 100755
 +#include <asm/uaccess.h>
 +#include <asm-generic/ioctl.h>
 +#include <uapi/asm/ioctl.h>
++#include <sysdev/fsl_soc.h>
  
  #define DRVNAME "t600_cpld"
  #define I2C_RW_RETRY_COUNT          10
-@@ -387,6 +397,40 @@ exit:
+@@ -49,6 +60,8 @@
+ #define RESET_CONTROL_REG           0x26
+ #define OTP_RECORD_REG              0x27
+ #define PIU_THERMAL_CONTROL_REG     0x19
++#define CER_IDLE_LOOP_CNT           0x1000
++#define CER_IDLE_LOOP_DELAY         1000
+ 
+ struct t600_cpld_data {
+     struct device      *hwmon_dev;
+@@ -387,6 +400,55 @@ exit:
      return status;
  }
- 
+
 +/*!
 +** @brief Set the disk to IDLE. Will rewrite IDLE command until the SATA CER
 +**        register is 0x0. JIRA ACCTON-1066
@@ -41,25 +52,40 @@ index 5dbe8a3..0823ded 100755
 +    mm_segment_t old_fs;
 +    int fd;
 +    int rc;
++    int loopNdx;
 +    unsigned char args[4] = {0, 0, 0, 0};
++    volatile unsigned long *sata_cer_reg = 0;
 +
 +    old_fs = get_fs();
 +    set_fs(KERNEL_DS);
 +
 +    fd = sys_open(devicename, O_RDONLY, 0);
 +    if (fd >= 0) {
++        sata_cer_reg = (volatile unsigned long*)ioremap_nocache(
++                        (get_immrbase() | 0x220018), sizeof(unsigned long));
 +        printk (KERN_ERR "%s(): Sending IDLE IMMEDIATE to %s device.\n",
-+            __FUNCTION__, devicename);
++                 __FUNCTION__, devicename);
 +        args[0] = ATA_CMD_IDLEIMMEDIATE;
-+        rc = sys_ioctl(fd, HDIO_DRIVE_CMD, (unsigned long)args);
++        rc = sys_ioctl(fd, HDIO_DRIVE_CMD, (long unsigned int)args);
 +        sys_close(fd);
-+
-+        if (rc != 0) {
-+            printk (KERN_ERR "%s(): IDLE for %s device failed rc %d.\n",
-+                __FUNCTION__, devicename, rc);
++        if (rc == 0) {
++            if ( sata_cer_reg != 0 ) {
++                for ( loopNdx=0; loopNdx<CER_IDLE_LOOP_CNT; loopNdx++ ) {
++                    if ( 0x0 == *sata_cer_reg ) {
++                        printk (KERN_ERR "%s:%s():%d: Successful force %s into IDLE mode!.\n",
++                                                 __FILE__, __FUNCTION__, __LINE__, devicename);
++                        break;
++                    }
++                    udelay(CER_IDLE_LOOP_DELAY);
++                }
++                if (CER_IDLE_LOOP_CNT == loopNdx) {
++                    printk (KERN_ERR "%s:%s():%d: ERROR - Failed to force %s into IDLE mode.\n",
++                                                   __FILE__, __FUNCTION__, __LINE__, devicename);
++                }
++            }
 +        } else {
-+            printk (KERN_ERR "%s(): IDLE for %s device OK rc %d.\n",
-+                __FUNCTION__, devicename, rc);
++            printk (KERN_ERR "%s(): IDLE ioctl for %s device failed rc %d.\n",
++                         __FUNCTION__, devicename, rc);
 +        }
 +    } else {
 +        printk (KERN_ERR "%s:%s():%d: ERROR - Failed to open the file %s device. \n",
@@ -70,7 +96,7 @@ index 5dbe8a3..0823ded 100755
  
  int t600_reset(int reset_type)
  {
-@@ -400,12 +444,19 @@ int t600_reset(int reset_type)
+@@ -400,12 +462,19 @@ int t600_reset(int reset_type)
  		return -1;
  	}
  
