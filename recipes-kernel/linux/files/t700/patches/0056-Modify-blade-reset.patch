@@ -1,0 +1,175 @@
+From 79903bc8bf6f491689ce83ca215ced7e7a35881d Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge.core.com>
+Date: Tue, 11 Feb 2020 11:50:48 +0800
+Subject: [PATCH] Modify blade reset.
+
+1. T700 use FJ-CDEC to reset blade.
+2. Add of node with device tree. The driver use of_node to set different reset component.
+---
+ arch/powerpc/sysdev/fss2_reset.c   | 38 ++++++++++++++++++++++++++++++++++----
+ drivers/hwmon/accton_t600_cpld.c   |  4 ++--
+ drivers/misc/accton_t600_fj_mdec.c | 28 ++++++++++++++++++++++++++++
+ 3 files changed, 64 insertions(+), 6 deletions(-)
+
+diff --git a/arch/powerpc/sysdev/fss2_reset.c b/arch/powerpc/sysdev/fss2_reset.c
+index d20e22f..2d55be6 100755
+--- a/arch/powerpc/sysdev/fss2_reset.c
++++ b/arch/powerpc/sysdev/fss2_reset.c
+@@ -46,15 +46,45 @@
+ #define COLD_RESTART           1
+ #define POWER_OFF              0
+ 
+-extern int t600_reset(int reset_type);
++#define ID_T600                0xa600
++#define ID_T700                0xa800
++
++extern int reset_by_cpld(int reset_type);
++extern void reset_by_fpga(void);
+ 
+ /* FSS2 Reset Warm function stub */
+ //static u32 fss2_reset_warm = -1;
+ 
++int fss2_reset(int reset_type)
++{
++	struct device_node *node;
++	unsigned int blade_id = ID_T600;
++
++	node = of_find_compatible_node(NULL, NULL, "fj,blade");
++	if (node) {
++		of_property_read_u32(node, "reg", &blade_id);
++	}
++
++	/* T600 don't have compatible in device tree, so default ID is T600 */
++	if (ID_T700 == blade_id){
++		if(COLD_RESTART == reset_type) {
++			reset_by_fpga();
++		}
++		else {
++			reset_by_cpld(reset_type);
++		}
++	}
++	else {
++		reset_by_cpld(reset_type);
++	}
++
++	return 0;
++}
++
+ void fss2_reset_warm(char *cmd)
+ {
+ 	int status;
+-	status = t600_reset(WARM_RESTART);
++	status = fss2_reset(WARM_RESTART);
+ 	return ;
+ }
+ 
+@@ -67,7 +97,7 @@ EXPORT_SYMBOL(fss2_reset_warm);
+ void fss2_reset_hard(void)
+ {
+ 	int status;
+-	status = t600_reset(COLD_RESTART);
++	status = fss2_reset(COLD_RESTART);
+ 	return ;
+ }
+ 
+@@ -80,7 +110,7 @@ EXPORT_SYMBOL(fss2_reset_hard);
+ void fss2_reset_power_off(void)
+ {
+     int status;
+-    status = t600_reset(POWER_OFF);
++    status = fss2_reset(POWER_OFF);
+     return ;
+ }
+ 
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index 470ea12..0e26025 100755
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -432,7 +432,7 @@ static void t600_idle_disk(const char* devicename) {
+     set_fs(old_fs);
+ }
+ 
+-int t600_reset(int reset_type)
++int reset_by_cpld(int reset_type)
+ {
+ 	const char data_buf[3][12] = {{'0', '\n'},{'1', '\n'},{ '2', '\n'}};
+ 
+@@ -454,7 +454,7 @@ int t600_reset(int reset_type)
+ 	return reset(t600_cpld_dev, NULL, data_buf[reset_type], 1);
+ }
+ 
+-EXPORT_SYMBOL(t600_reset);
++EXPORT_SYMBOL(reset_by_cpld);
+ 
+ static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
+              char *buf)
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index 11414a1..1c87b8c 100755
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -134,6 +134,10 @@ enum fpga_register_map
+     I2C_ACC_CMD         = 0x00A00134,
+     I2C_BUSY            = 0x00A00130,
+     I2C_IRQ_ERR_HL      = 0x00A00120,
++    // CDEC
++    TRUE_PWR_EN         = 0x00A00200,
++    TRUE_PWR_CTL        = 0x00A00204,
++    TRUE_PWR_ST         = 0x00A00208,
+     // MDEC
+     MDEC_EEPROM_ADD     = 0x00F00000,
+ };
+@@ -177,6 +181,7 @@ struct fpga_device
+ };
+ 
+ static struct mutex io_lock;
++static char __iomem* cdec_addr;
+ 
+ static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos, u8 value);
+ static void read_port_eeprom_data(struct fpga_device* fpga_dev, u8 port, u8 *buffer);
+@@ -212,6 +217,15 @@ static void t600_fj_mdec_write32(u32 value, void *addr)
+     mutex_unlock(&io_lock);
+ }
+ 
++static void t600_fj_mdec_write32_mask(u32 value, u32 mask, void *addr)
++{
++    u32 read_data, write_data;
++
++    read_data = t600_fj_mdec_read32(addr);
++    write_data = (read_data & (~mask)) | value;
++    t600_fj_mdec_write32(write_data, addr);
++}
++
+ /* =================== The Sysfs Interface Area [START] =================== */
+ static ssize_t cpld_version_show(struct device* dev, struct device_attribute* attr, char* buf)
+ {
+@@ -1195,6 +1209,15 @@ static const struct attribute_group fpga_group =
+ };
+ 
+ /* ==================== The Sysfs Interface Area [END] ==================== */
++void reset_by_fpga(void)
++{
++	t600_fj_mdec_write32_mask(0x1, 0x1, cdec_addr + TRUE_PWR_ST);
++	t600_fj_mdec_write32(0xCC665AA5, cdec_addr + TRUE_PWR_EN);
++	t600_fj_mdec_write32_mask(0x1, 0x1, cdec_addr + TRUE_PWR_CTL);
++
++}
++EXPORT_SYMBOL(reset_by_fpga);
++
+ 
+ static const struct of_device_id t600_fpga_of_match[] = {
+     {
+@@ -1331,6 +1354,11 @@ static int accton_fpga_probe(struct platform_device *pdev)
+         goto err_out_free;
+     }
+ 
++    if(FJ_CDEC == (long)of_id->data)
++    {
++        cdec_addr = fpga_dev->hw_addr;
++    }
++
+     rc = sysfs_create_group(&pdev->dev.kobj, &root_group);
+     if(rc)
+     {
+-- 
+1.9.1
+

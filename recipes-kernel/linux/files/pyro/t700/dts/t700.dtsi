@@ -466,6 +466,11 @@
 			compatible = "fj,fpga-cdec";
 			reg = <0x40000000>;
 		};
+		
+		blade@1 {
+			compatible = "fj,blade";
+			reg = <0x0000a800>;
+		};
 	};
 
 	pci0: pcie@ffe240000 {
