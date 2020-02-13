@@ -190,6 +190,7 @@ SRC_URI_append_t700 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR
                         file://${MACHINE}/patches/0055-Fix-issue-ACCTON-947.patch                                  \
                         file://${MACHINE}/patches/0056-mdio-bus-find-by-name.patch                                 \
                         file://${MACHINE}/patches/0057-Remap_fnc_reset_types_to_standardize.patch                  \
+                        file://${MACHINE}/patches/0058-Modify-blade-reset.patch                                    \
                        "
 
 
@@ -250,4 +251,4 @@ do_deploy_prepend() {
     done
 }
 
-PR := "${PR}.10"
+PR := "${PR}.11"
