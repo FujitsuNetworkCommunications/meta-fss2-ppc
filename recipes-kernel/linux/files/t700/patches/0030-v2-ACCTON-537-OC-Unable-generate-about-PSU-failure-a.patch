@@ -4,6 +4,8 @@ Date: Wed, 2 Jan 2019 15:47:42 +0800
 Subject: [PATCH] ACCTON-537: [OC] Unable generate about PSU failure alarm when
  plug two AC power and other one without power input. 1. add detla open source
  pmbus driver. 2. add psu_status for dhal verificatoin.
+  NOTE: mod by peter.bugni@fujitsu.com Jan 2020.
+    update dps_800ab_16_d.c to up-to-date contents.
 
 ---
  drivers/hwmon/pmbus/Kconfig          |  10 +
@@ -45,7 +47,7 @@ new file mode 100644
 index 0000000..3272bd2
 --- /dev/null
 +++ b/drivers/hwmon/pmbus/dps_800ab_16_d.c
-@@ -0,0 +1,515 @@
+@@ -0,0 +1,542 @@
 +/*
 + * An hwmon driver for delta AG9032v1 PSU
 + * dps_800ab_16_d.c - Support for DPS-800AB-16 D Power Supply Module
@@ -97,13 +99,14 @@ index 0000000..3272bd2
 +
 +	/* Registers value */
 +	u8	vout_mode;
++	u8	status_input;
 +	u16	v_in;
 +	u16	v_out;
 +	u16	i_in;
 +	u16	i_out;
 +	u16	p_in;
 +	u16	p_out;
-+	u16 status_word;
++	u16	status_word;
 +	u16	temp_input[2];
 +	u8	fan_fault;
 +	u16	fan_duty_cycle[2];
@@ -146,6 +149,7 @@ index 0000000..3272bd2
 +	PSU_MFR_MODEL,
 +	PSU_MFR_SERIAL,
 +	PSU_STATUS,
++	PSU_STATUS_INPUT,
 +};
 +
 +static int two_complement_to_int(u16 data, u8 valid_bit, int mask)
@@ -293,6 +297,28 @@ index 0000000..3272bd2
 +    return sprintf(buf, "%d\n", data->status_word);
 +}
 +
++static ssize_t show_byte(struct device *dev, struct device_attribute *dev_attr,
++                                 char *buf)
++{
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(dev_attr);
++    struct dps_800ab_16_d_data *data = dps_800ab_16_d_update_device(dev);
++    u8     status = 0;
++
++    if (!data->valid) {
++        return 0;
++    }
++
++    switch (attr->index) {
++        case PSU_STATUS_INPUT:
++            status = data->status_input;
++            break;
++        default:
++            break;
++    }
++
++    return sprintf(buf, "%d\n", status);
++}
++
 +static int dps_800ab_16_d_read_byte(struct i2c_client *client, u8 reg)
 +{
 +	return i2c_smbus_read_byte_data(client, reg);
@@ -355,6 +381,7 @@ index 0000000..3272bd2
 +		u8 command;
 +		struct reg_data_byte regs_byte[] = {
 +				{0x20, &data->vout_mode},
++				{0x7c, &data->status_input},
 +				{0x81, &data->fan_fault}
 +		};
 +		struct reg_data_word regs_word[] = {
@@ -443,6 +470,7 @@ index 0000000..3272bd2
 +static SENSOR_DEVICE_ATTR(psu_mfr_model,      S_IRUGO, for_ascii,       NULL, PSU_MFR_MODEL);
 +static SENSOR_DEVICE_ATTR(psu_mfr_serial,     S_IRUGO, for_ascii,       NULL, PSU_MFR_SERIAL);
 +static SENSOR_DEVICE_ATTR(psu_status,         S_IRUGO, show_word,       NULL, PSU_STATUS);
++static SENSOR_DEVICE_ATTR(psu_status_input,   S_IRUGO, show_byte,       NULL, PSU_STATUS_INPUT);
 +
 +static struct attribute *dps_800ab_16_d_attributes[] = {
 +	&sensor_dev_attr_psu_v_in.dev_attr.attr,
@@ -458,6 +486,7 @@ index 0000000..3272bd2
 +	&sensor_dev_attr_psu_mfr_model.dev_attr.attr,
 +	&sensor_dev_attr_psu_mfr_serial.dev_attr.attr,
 +	&sensor_dev_attr_psu_status.dev_attr.attr,
++	&sensor_dev_attr_psu_status_input.dev_attr.attr,
 +	NULL
 +};
 +

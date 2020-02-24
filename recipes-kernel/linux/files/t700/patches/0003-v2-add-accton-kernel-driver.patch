@@ -1,0 +1,3729 @@
+From 728f804ab22ec43e05faadce304a6c43f55ec14d Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Thu, 19 Jul 2018 21:26:05 +0800
+Subject: [PATCH] add accton kernel driver
+    NOTE: Modified by peter.bugni@fujitsu.com to incorporate later patches. 
+    Jan, 2020.
+ 
+---
+ drivers/hwmon/Kconfig              |   16 +
+ drivers/hwmon/Makefile             |    2 +
+ drivers/hwmon/accton_t600_cpld.c   |  679 ++++++++++++++++++++++++
+ drivers/hwmon/accton_t600_fan.c    |  605 +++++++++++++++++++++
+ drivers/misc/Kconfig               |    9 +
+ drivers/misc/Makefile              |    1 +
+ drivers/misc/accton_t600_fj_mdec.c | 1009 ++++++++++++++++++++++++++++++++++++
+ 7 files changed, 2321 insertions(+)
+ create mode 100644 drivers/hwmon/accton_t600_cpld.c
+ create mode 100644 drivers/hwmon/accton_t600_fan.c
+ create mode 100644 drivers/misc/accton_t600_fj_mdec.c
+
+diff --git a/drivers/hwmon/Kconfig b/drivers/hwmon/Kconfig
+index 4201c7e..41002b5 100644
+--- a/drivers/hwmon/Kconfig
++++ b/drivers/hwmon/Kconfig
+@@ -81,6 +81,22 @@ config SENSORS_ABITUGURU3
+ 	  This driver can also be built as a module.  If so, the module
+ 	  will be called abituguru3.
+ 
++config SENSORS_ACCTON_T600_CPLD
++	tristate "Accton T600 cpld"
++	depends on I2C
++	help
++	  If you say yes here you get support for Accton t600 cpld.
++	  This driver can also be built as a module. If so, the module will
++	  be called accton_t600_cpld.
++
++config SENSORS_ACCTON_T600_FAN
++	tristate "Accton T600 fan"
++	depends on I2C
++	help
++	  If you say yes here you get support for Accton T600 fan.
++	  This driver can also be built as a module. If so, the module will
++	  be called accton_t600_fan.
++
+ config SENSORS_AD7314
+ 	tristate "Analog Devices AD7314 and compatibles"
+ 	depends on SPI
+diff --git a/drivers/hwmon/Makefile b/drivers/hwmon/Makefile
+index eacd2ee..e3cdd72 100644
+--- a/drivers/hwmon/Makefile
++++ b/drivers/hwmon/Makefile
+@@ -22,6 +22,8 @@ obj-$(CONFIG_SENSORS_W83791D)	+= w83791d.o
+ obj-$(CONFIG_SENSORS_AB8500)	+= abx500.o ab8500.o
+ obj-$(CONFIG_SENSORS_ABITUGURU)	+= abituguru.o
+ obj-$(CONFIG_SENSORS_ABITUGURU3)+= abituguru3.o
++obj-$(CONFIG_SENSORS_ACCTON_T600_CPLD) += accton_t600_cpld.o
++obj-$(CONFIG_SENSORS_ACCTON_T600_FAN)  += accton_t600_fan.o
+ obj-$(CONFIG_SENSORS_AD7314)	+= ad7314.o
+ obj-$(CONFIG_SENSORS_AD7414)	+= ad7414.o
+ obj-$(CONFIG_SENSORS_AD7418)	+= ad7418.o
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+new file mode 100644
+index 0000000..e29916c
+--- /dev/null
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -0,0 +1,941 @@
++/*
++ * A hwmon driver for the t600_sys_cpld
++ *
++ * Copyright (C) 2013 Accton Technology Corporation.
++ * Brandon Chuang <brandon_chuang@accton.com.tw>
++ *
++ * Based on ad7414.c
++ * Copyright 2006 Stefan Roese <sr at denx.de>, DENX Software Engineering
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++ */
++
++#include <linux/module.h>
++#include <linux/jiffies.h>
++#include <linux/i2c.h>
++#include <linux/hwmon.h>
++#include <linux/hwmon-sysfs.h>
++#include <linux/err.h>
++#include <linux/mutex.h>
++#include <linux/sysfs.h>
++#include <linux/slab.h>
++#include <linux/delay.h>
++#include <linux/kernel.h>
++#include <linux/init.h>
++#include <linux/syscalls.h>
++#include <linux/fcntl.h>
++#include <linux/hdreg.h>
++#include <linux/ioctl.h>
++#include <linux/ata.h>
++#include <asm/uaccess.h>
++#include <asm-generic/ioctl.h>
++#include <uapi/asm/ioctl.h>
++#include <sysdev/fsl_soc.h>
++
++#define DRVNAME "t600_cpld"
++#define I2C_RW_RETRY_COUNT          10
++#define I2C_RW_RETRY_INTERVAL       60 /* ms */
++#define BOARD_REV_REG               0x1
++#define CPLD_VER_REG                0x2
++#define PSU_STATUS_REG              0x3
++#define SFP_PWR_REG                 0x14
++#define BOOT_STATUS_REG             0x25
++#define PIU_STATUS_REG              0x24
++#define USB_PG_REG                  0x13
++#define BOARD_PG_REG                0x18
++#define PIU_MGMT_PG_REG             0x21
++#define SYSTEM_RESET_REG            0x22
++#define RESET_CONTROL_REG           0x26
++#define OTP_RECORD_REG              0x27
++#define PIU_THERMAL_CONTROL_REG     0x19
++#define CER_IDLE_LOOP_CNT           0x1000
++#define CER_IDLE_LOOP_DELAY         1000
++
++struct t600_cpld_data {
++    struct device      *hwmon_dev;
++    struct mutex        update_lock;
++};
++
++/* Addresses scanned for t600_cpld
++ */
++static const unsigned short normal_i2c[] = { I2C_CLIENT_END };
++
++#define PSU_PRESENT_ATTR_ID(index)      PSU##index##_PRESENT
++#define PSU_OUTPUTGOOD_ATTR_ID(index)   PSU##index##_OUTPUT_GOOD
++#define PSU_ALARM_ATTR_ID(index)        PSU##index##_ALARM
++#define PIU_PRESENT_ATTR_ID(index)      PIU##index##_PRESENT
++#define SFP_PWR_ATTR_ID(index)          SFP##index##_PWR
++
++enum t600_cpld_sysfs_attributes {
++    BOARD_VERSION,
++    CPLD_VERSION,
++    ACCESS,
++    /* reset */
++    RESET,
++    /* bootup status */
++    BOOTUP_STATUS,
++    /* PSU attributes */
++    PSU_PRESENT_ATTR_ID(1),
++    PSU_PRESENT_ATTR_ID(2),
++    PSU_OUTPUTGOOD_ATTR_ID(1),
++    PSU_OUTPUTGOOD_ATTR_ID(2),
++    PSU_ALARM_ATTR_ID(1),
++    PSU_ALARM_ATTR_ID(2),  
++    /* PIU attributes */
++    PIU_PRESENT_ATTR_ID(1),
++    PIU_PRESENT_ATTR_ID(2),  
++    /* SFP attributes */
++    SFP_PWR_ATTR_ID(1),
++    SFP_PWR_ATTR_ID(2),  
++    USB_PWR_FAULT,
++    BOARD_PWR_GOOD,
++    PIU_MGMT_PWR_GOOD,
++    PIU_THERMAL_CTRL,
++    BOARD_OTP_STATUS,
++};
++static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
++             char *buf);
++static ssize_t show_piu(struct device *dev, struct device_attribute *da,
++             char *buf);                
++static ssize_t show_sfp(struct device *dev, struct device_attribute *da,
++             char *buf);                                   
++static ssize_t show_psu(struct device *dev, struct device_attribute *da,
++             char *buf);
++static ssize_t reset(struct device *dev, struct device_attribute *da,
++            const char *buf, size_t count);
++static ssize_t raw_access(struct device *dev, struct device_attribute *da,
++            const char *buf, size_t count);     
++static ssize_t show_version(struct device *dev, struct device_attribute *da,
++             char *buf);             
++static ssize_t show_pwr_status(struct device *dev, struct device_attribute *da,
++             char *buf);
++static ssize_t set_sfp_power(struct device *dev, struct device_attribute *da,
++                        const char *buf, size_t count);
++static ssize_t show_thermal_ctrl(struct device *dev, struct device_attribute *da,
++             char *buf);
++static ssize_t set_thermal_ctrl(struct device *dev, struct device_attribute *da,
++                        const char *buf, size_t count);
++
++static ssize_t show_otpstatus(struct device *dev, struct device_attribute *da, char *buf);
++static ssize_t set_otpstatus(struct device *dev, struct device_attribute *da,
++                        const char *buf, size_t count);
++                        
++/* sysfs attributes for hwmon 
++ */
++/* psu attributes */
++#define DECLARE_PSU_SENSOR_DEVICE_ATTR(index) \
++    static SENSOR_DEVICE_ATTR(psu##index##_present,    S_IRUGO, show_psu, NULL, PSU##index##_PRESENT); \
++    static SENSOR_DEVICE_ATTR(psu##index##_power_good, S_IRUGO, show_psu, NULL, PSU##index##_OUTPUT_GOOD); \
++    static SENSOR_DEVICE_ATTR(psu##index##_alarm, S_IRUGO, show_psu,     NULL, PSU##index##_ALARM)
++#define DECLARE_PSU_ATTR(index) \
++    &sensor_dev_attr_psu##index##_present.dev_attr.attr, \
++    &sensor_dev_attr_psu##index##_power_good.dev_attr.attr, \
++    &sensor_dev_attr_psu##index##_alarm.dev_attr.attr
++    
++/* sfp attributes */
++#define DECLARE_SFP_SENSOR_DEVICE_ATTR(index) \
++    static SENSOR_DEVICE_ATTR(sfp##index##_pwr, S_IWUSR | S_IRUGO, show_sfp, set_sfp_power, SFP##index##_PWR)
++        
++#define DECLARE_SFP_ATTR(index) \
++    &sensor_dev_attr_sfp##index##_pwr.dev_attr.attr    
++    
++static SENSOR_DEVICE_ATTR(board_version, S_IRUGO, show_version, NULL, BOARD_VERSION);
++static SENSOR_DEVICE_ATTR(cpld_version, S_IRUGO, show_version, NULL, CPLD_VERSION);
++static SENSOR_DEVICE_ATTR(raw_access, S_IWUSR | S_IRUGO, NULL, raw_access, ACCESS);
++
++/* Power Status Good / Fault */
++static SENSOR_DEVICE_ATTR(usb_pwr_fault    , S_IRUGO, show_pwr_status, NULL, USB_PWR_FAULT);
++static SENSOR_DEVICE_ATTR(board_pwr_good   , S_IRUGO, show_pwr_status, NULL, BOARD_PWR_GOOD);
++static SENSOR_DEVICE_ATTR(piu_mgmt_pwr_good, S_IRUGO, show_pwr_status, NULL, PIU_MGMT_PWR_GOOD);
++
++/* reset attribtes */
++static SENSOR_DEVICE_ATTR(system_reset, S_IWUSR, NULL, reset, RESET);
++/* boot status attribute */
++static SENSOR_DEVICE_ATTR(bootup_status, S_IRUGO, show_bootstatus, NULL, BOOTUP_STATUS);
++
++/* OTP contorl */
++static SENSOR_DEVICE_ATTR(board_otp_status, S_IRUGO | S_IWUSR, show_otpstatus, set_otpstatus, BOARD_OTP_STATUS);
++
++/* psu attributes*/
++DECLARE_PSU_SENSOR_DEVICE_ATTR(1);
++DECLARE_PSU_SENSOR_DEVICE_ATTR(2);
++/* piu present attribute */
++static SENSOR_DEVICE_ATTR(piu1_present, S_IRUGO, show_piu, NULL, PIU_PRESENT_ATTR_ID(1));
++static SENSOR_DEVICE_ATTR(piu2_present, S_IRUGO, show_piu, NULL, PIU_PRESENT_ATTR_ID(2));
++
++static SENSOR_DEVICE_ATTR(piu_thermal_ctrl, S_IRUGO | S_IWUSR, show_thermal_ctrl, set_thermal_ctrl, PIU_THERMAL_CTRL);
++/* sfp attributes*/
++DECLARE_SFP_SENSOR_DEVICE_ATTR(1);
++DECLARE_SFP_SENSOR_DEVICE_ATTR(2);
++
++static struct attribute *t600_cpld_attributes[] = {
++  &sensor_dev_attr_board_version.dev_attr.attr,
++  &sensor_dev_attr_cpld_version.dev_attr.attr,
++  &sensor_dev_attr_raw_access.dev_attr.attr,
++  /* reset attributes */
++  &sensor_dev_attr_system_reset.dev_attr.attr,
++  /* bootup status */
++  &sensor_dev_attr_bootup_status.dev_attr.attr,
++  /* psu attributes*/
++  DECLARE_PSU_ATTR(1),
++  DECLARE_PSU_ATTR(2),
++  /* piu present */ 
++  &sensor_dev_attr_piu1_present.dev_attr.attr,
++  &sensor_dev_attr_piu2_present.dev_attr.attr,
++  /* sfp attributes */  
++  DECLARE_SFP_ATTR(1),
++  DECLARE_SFP_ATTR(2),
++  &sensor_dev_attr_usb_pwr_fault.dev_attr.attr,
++  &sensor_dev_attr_board_pwr_good.dev_attr.attr,
++  &sensor_dev_attr_piu_mgmt_pwr_good.dev_attr.attr,
++  &sensor_dev_attr_piu_thermal_ctrl.dev_attr.attr,
++  &sensor_dev_attr_board_otp_status.dev_attr.attr,
++  NULL
++};
++
++struct device *t600_cpld_dev;
++
++static const struct attribute_group t600_cpld_group = {
++    .attrs = t600_cpld_attributes,
++};
++
++static int t600_cpld_read(struct i2c_client *client, u8 reg)
++{
++    int status = 0, retry = I2C_RW_RETRY_COUNT;
++    while (retry) {
++        status = i2c_smbus_read_byte_data(client, reg);
++        if (unlikely(status < 0)) {
++            msleep(I2C_RW_RETRY_INTERVAL);
++            retry--;
++            continue;
++        }
++        break;
++    }
++    return status;
++}
++
++static int t600_cpld_write(struct i2c_client *client, u8 reg, u8 value)
++{
++    int status = 0, retry = I2C_RW_RETRY_COUNT;
++    while (retry) {
++        status = i2c_smbus_write_byte_data(client, reg, value);
++        if (unlikely(status < 0)) {
++            msleep(I2C_RW_RETRY_INTERVAL);
++            retry--;
++            continue;
++       }
++       break;
++    }
++    return status;
++}
++
++static ssize_t show_version(struct device *dev, struct device_attribute *da,
++             char *buf)
++{
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++    int status = 0;
++
++    u8 reg = 0, mask = 0;
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++    switch (attr->index) {
++    case BOARD_VERSION:
++        reg  = BOARD_REV_REG;
++        mask = 0x07;
++        break;
++    case CPLD_VERSION:
++        reg  = CPLD_VER_REG;
++        mask = 0x0F;
++        break;
++    default:
++        return 0; /* return 0 if attr->index is out of range */
++        break;
++    }
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, reg);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++    return sprintf(buf, "%d\n", (status & mask));
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;  
++
++    
++}
++static ssize_t raw_access(struct device *dev, struct device_attribute *da,
++            const char *buf, size_t count)
++{
++    u32 addr, val;  
++    int status;
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++
++    if (sscanf(buf, "0x%x 0x%x", &addr, &val) != 2) {
++        return -EINVAL;
++    }
++
++    if (addr > 0xFF || val > 0xFF) {
++        return -EINVAL;
++    }
++
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_write(client, addr, val);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++    return count;
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;  
++
++
++}
++
++static ssize_t reset(struct device *dev, struct device_attribute *da,
++            const char *buf, size_t count)
++{
++    int status, reset;
++    
++    u8 regval=0;
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++
++    status = kstrtoint(buf, 10, &reset);
++    if (status) {
++        return status;
++    }
++        
++    if (reset < 0 || reset > 2) {  /* reset 1: hard reset, 2: warm reset, 0: power-off */
++        return -EINVAL;
++    }
++
++    /* Dummy patch.  Keep line numbers aligned with T600 version */
++    /*
++     *
++     *
++     *
++     *
++     *
++     *
++     *
++     *
++     *
++     *
++     *
++     */
++
++    mutex_lock(&data->update_lock);
++    if (reset == 1) {
++        /* RESET_ALL when SW hard reset */
++
++        /* Set the OTP-record bit2 to 0 (NON-OTP)
++         */
++        status = t600_cpld_read(client, OTP_RECORD_REG);
++        if (unlikely(status < 0)) {
++            goto exit;
++        }
++
++        regval = status & 0xFB;
++        status = t600_cpld_write(client, OTP_RECORD_REG, regval);
++        if (unlikely(status < 0)) {
++            goto exit;
++        }
++
++        /* Set power-cycle bit2 to 1
++         */
++        regval = 0;
++        status = t600_cpld_read(client, SYSTEM_RESET_REG);
++        if (unlikely(status < 0)) {
++            goto exit;
++        }
++
++        regval = status | (0x1 << 2);
++        status = t600_cpld_write(client, SYSTEM_RESET_REG, regval);
++    }
++    else if (reset == 2){
++        /* WARM_BOOT when SW warm reset */
++        status = t600_cpld_read(client, SYSTEM_RESET_REG);
++        if (unlikely(status < 0)) {
++            goto exit;
++        }
++
++        regval = status | (0x1 << 1);
++        status = t600_cpld_write(client, SYSTEM_RESET_REG, regval);
++    }
++    else if (reset == 0)
++    {
++        /* POWER-OFF */
++        status = t600_cpld_read(client, SYSTEM_RESET_REG);
++        if (unlikely(status < 0)) {
++            goto exit;
++        }
++
++        regval = status | 0x1;
++        status = t600_cpld_write(client, SYSTEM_RESET_REG, regval);
++    }
++
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++    return count;
++
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++}
++
++/*!
++** @brief Set the disk to IDLE. Will rewrite IDLE command until the SATA CER
++**        register is 0x0. JIRA ACCTON-1066
++*/
++static void t600_idle_disk(const char* devicename) {
++    mm_segment_t old_fs;
++    int fd;
++    int rc;
++    int loopNdx;
++    unsigned char args[4] = {0, 0, 0, 0};
++    volatile unsigned long *sata_cer_reg = 0;
++
++    old_fs = get_fs();
++    set_fs(KERNEL_DS);
++
++    fd = sys_open(devicename, O_RDONLY, 0);
++    if (fd >= 0) {
++        sata_cer_reg = (volatile unsigned long*)ioremap_nocache(
++                        (get_immrbase() | 0x220018), sizeof(unsigned long));
++        printk (KERN_ERR "%s(): Sending IDLE IMMEDIATE to %s device.\n",
++                 __FUNCTION__, devicename);
++        args[0] = ATA_CMD_IDLEIMMEDIATE;
++        rc = sys_ioctl(fd, HDIO_DRIVE_CMD, (long unsigned int)args);
++        sys_close(fd);
++        if (rc == 0) {
++            if ( sata_cer_reg != 0 ) {
++                for ( loopNdx=0; loopNdx<CER_IDLE_LOOP_CNT; loopNdx++ ) {
++                    if ( 0x0 == *sata_cer_reg ) {
++                        printk (KERN_ERR "%s:%s():%d: Successful force %s into IDLE mode!.\n",
++                                                 __FILE__, __FUNCTION__, __LINE__, devicename);
++                        break;
++                    }
++                    udelay(CER_IDLE_LOOP_DELAY);
++                }
++                if (CER_IDLE_LOOP_CNT == loopNdx) {
++                    printk (KERN_ERR "%s:%s():%d: ERROR - Failed to force %s into IDLE mode.\n",
++                                                   __FILE__, __FUNCTION__, __LINE__, devicename);
++                }
++            }
++        } else {
++            printk (KERN_ERR "%s(): IDLE ioctl for %s device failed rc %d.\n",
++                         __FUNCTION__, devicename, rc);
++        }
++    } else {
++        printk (KERN_ERR "%s:%s():%d: ERROR - Failed to open the file %s device. \n",
++            __FILE__, __FUNCTION__, __LINE__, devicename);
++    }
++    set_fs(old_fs);
++}
++
++int t600_reset(int reset_type)
++{
++	const char data_buf[3][12] = {{'0', '\n'},{'1', '\n'},{ '2', '\n'}};
++
++	if(NULL == t600_cpld_dev){
++		return -1;
++	}
++
++	if(reset_type < 0 || reset_type > 2){
++		return -1;
++	}
++
++	/* FNC wdt interrupt calls this in interrupt context
++	 * The ioctl call in idle_disk is not happy in that context.
++	 */
++	if ( !in_interrupt() ) {
++		t600_idle_disk("/dev/sda");
++	}
++
++	return reset(t600_cpld_dev, NULL, data_buf[reset_type], 1);
++}
++
++EXPORT_SYMBOL(t600_reset);
++
++static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
++             char *buf)
++{
++    int status = 0;
++
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, BOOT_STATUS_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++    return sprintf(buf, "%d\n", ((status & 0x02)? 2:1));  /* BIT_1 WARM BOOT=2, BIT_0 COLD BOOT=1 */
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;  
++}
++
++static ssize_t show_otpstatus(struct device *dev, struct device_attribute *da,
++             char *buf)
++{
++    int status = 0;
++
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, OTP_RECORD_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++    return sprintf(buf, "%d\n", ((status & 0x04)? 1:0));
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++}
++
++static ssize_t set_otpstatus(struct device *dev, struct device_attribute *da,
++                        const char *buf, size_t count)
++{
++    int status = 0, otp_status = 0;
++    u8 regval=0;
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++
++    status = kstrtoint(buf, 10, &otp_status);
++    if (status) {
++        return status;
++    }
++
++    if ((otp_status != 0) && (otp_status != 1)) {
++        return -EINVAL;
++    }
++
++    mutex_lock(&data->update_lock);
++
++    status = t600_cpld_read(client, OTP_RECORD_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++
++    if (otp_status == 1)   /* Bit2: OTP record, 1: assert for OTP */
++        regval = status | 0x4;
++    else
++        regval = status & 0xFB;
++
++    status = t600_cpld_write(client, OTP_RECORD_REG, regval);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++
++    mutex_unlock(&data->update_lock);
++    return count;
++
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++}
++
++static ssize_t show_psu(struct device *dev, struct device_attribute *da,
++             char *buf)
++{
++    int value = 0;
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++         
++    int status = 0, mask = 0; 
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, PSU_STATUS_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++
++    switch (attr->index) {
++        case PSU1_PRESENT:
++        case PSU2_PRESENT:
++            if (attr->index - PSU1_PRESENT) 
++                mask = 0x1; 
++            else
++                mask = 0x8;         
++            if (status & mask)
++                value = 0;
++            else
++                value = 1;    /* cpld val=0: present*/
++            break;      
++        case PSU1_OUTPUT_GOOD:
++        case PSU2_OUTPUT_GOOD:
++            if (attr->index - PSU1_OUTPUT_GOOD) 
++                mask = 0x2; 
++            else
++                mask = 0x10;
++                
++            if (status & mask)
++                value = 1;
++            else
++                value = 0;   
++            break;
++        case PSU1_ALARM:
++        case PSU2_ALARM:
++            if (attr->index - PSU1_ALARM) 
++                mask = 0x4; 
++            else
++                mask = 0x20;                
++            if (status & mask)
++                value = 0;  /* cpld val=1: PSU works normal */
++            else
++                value = 1;
++                
++            break;
++          default:
++            return 0;
++    }
++                        
++    return sprintf(buf, "%d\n", value);
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++    
++}
++
++static ssize_t show_piu(struct device *dev, struct device_attribute *da
++                        ,char *buf)
++{
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++    int value = 0;
++    int status = 0; 
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, PIU_STATUS_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++
++    switch (attr->index) {
++        case PIU1_PRESENT:
++        case PIU2_PRESENT:
++            value = !((status >> (attr->index - PIU1_PRESENT)) & 0x1);
++            break;;
++        default:
++        return 0;
++    }
++    return sprintf(buf, "%d\n", value);
++
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;     
++
++}
++
++static ssize_t show_thermal_ctrl(struct device *dev, struct device_attribute *da
++                        ,char *buf)
++{
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++    int value = 0, status = 0; 
++    
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, PIU_THERMAL_CONTROL_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++
++    value = (status >> 2) & 0x3;
++
++    return sprintf(buf, "%d\n", value);
++
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;     
++
++}
++
++static ssize_t set_thermal_ctrl(struct device *dev, struct device_attribute *da,
++                        const char *buf, size_t count)
++{
++    int status = 0, thermal_ctrl = 0;
++    u8 regval=0;
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++
++    status = kstrtoint(buf, 10, &thermal_ctrl);
++    if (status) {
++        return status;
++    }
++
++    if ((thermal_ctrl != 0) && (thermal_ctrl != 3)) {
++        return -EINVAL;
++    }
++
++    mutex_lock(&data->update_lock);
++
++    status = t600_cpld_read(client, PIU_THERMAL_CONTROL_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++
++    if (thermal_ctrl == 3)   /* Bit2~3, 0: MDEC/DCO control, 1: CPU control */
++        regval = status | 0xC;
++    else
++        regval = status & (~0xC);
++
++    status = t600_cpld_write(client, PIU_THERMAL_CONTROL_REG, regval);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++
++    mutex_unlock(&data->update_lock);
++    return count;
++
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++}
++
++static ssize_t show_sfp(struct device *dev, struct device_attribute *da,
++             char *buf)
++{
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++    int value = 0;
++      
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++    int status = 0,mask = 0;
++    u8 reg=0;
++    
++    switch (attr->index) {
++    case SFP1_PWR:  /* BIT_1 SFP1_PWR BIT_2 SFP2_PWR */ 
++    case SFP2_PWR:
++        if (attr->index - SFP1_PWR) 
++            mask = 0x04; 
++        else
++            mask = 0x02;
++        reg = SFP_PWR_REG;
++        break;
++
++    default:
++        return 0;
++        break;
++    }
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, reg);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++    if (status & mask)
++        value = 1;
++    else
++        value = 0;                   
++        
++    return sprintf(buf, "%d\n", value);
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++}
++
++static ssize_t set_sfp_power(struct device *dev, struct device_attribute *da,
++                        const char *buf, size_t count)
++{
++    int status = 0, sfp_power = 0, mask = 0;
++    u8 reg = 0, regval=0;
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++
++    status = kstrtoint(buf, 10, &sfp_power);
++    if (status) {
++        return status;
++    }
++
++    if (sfp_power != 0 && sfp_power != 1) {
++        return -EINVAL;
++    }
++
++    switch (attr->index) {
++        case SFP1_PWR:  /* BIT_1 SFP2_PWR BIT_2 SFP1_PWR */
++        case SFP2_PWR:
++            if (attr->index - SFP1_PWR)
++                mask = 0x02;
++            else
++                mask = 0x04;
++            reg = SFP_PWR_REG;
++            break;
++
++        default:
++            return 0;
++            break;
++    }
++
++    mutex_lock(&data->update_lock);
++
++    status = t600_cpld_read(client, reg);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++
++    if (sfp_power == 1)   /* enable sfp power */
++        regval = status | mask;
++    else
++        regval = status & (~mask);
++
++    status = t600_cpld_write(client, reg, regval);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++
++    mutex_unlock(&data->update_lock);
++    return count;
++
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++}
++
++
++static ssize_t show_pwr_status(struct device *dev, struct device_attribute *da,
++             char *buf)
++{
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++    int status = 0;
++
++    u8 reg = 0, mask = 0;
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++    switch (attr->index) {
++    case USB_PWR_FAULT:
++        reg  = USB_PG_REG;
++        mask = 0x01;
++        break;
++    case BOARD_PWR_GOOD:
++        reg  = BOARD_PG_REG;
++        mask = 0x01;
++        break;
++    case PIU_MGMT_PWR_GOOD:
++        reg  = PIU_MGMT_PG_REG;
++        mask = 0x01;
++        break;      
++    default:
++        return 0;
++        break;
++    }
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, reg);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);   
++    if (USB_PG_REG == reg)
++       return sprintf(buf, "%d\n", !(status & mask)); // read 0 is usb_pwr_fault T, 1 usb_pwr_fault F
++    else
++       return sprintf(buf, "%d\n", (status & mask));
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;  
++}
++
++static int t600_cpld_probe(struct i2c_client *client,
++            const struct i2c_device_id *dev_id)
++{
++    int status;
++    struct t600_cpld_data *data = NULL;
++
++    if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA)) {
++        dev_dbg(&client->dev, "i2c_check_functionality failed (0x%x)\n", client->addr);
++        status = -EIO;
++        goto exit;
++    }
++
++    data = kzalloc(sizeof(struct t600_cpld_data), GFP_KERNEL);
++    if (!data) {
++        status = -ENOMEM;
++        goto exit;
++    }
++
++    i2c_set_clientdata(client, data);
++    mutex_init(&data->update_lock);
++    dev_info(&client->dev, "chip found\n");
++
++    /* Register sysfs hooks */
++    status = sysfs_create_group(&client->dev.kobj, &t600_cpld_group);
++    if (status) {
++        goto exit_free;
++    }
++
++    data->hwmon_dev = hwmon_device_register(&client->dev);
++    if (IS_ERR(data->hwmon_dev)) {
++        status = PTR_ERR(data->hwmon_dev);
++        goto exit_remove;
++    }
++
++    t600_cpld_dev = &client->dev;
++    dev_info(&client->dev, "%s: cpld '%s'\n",
++    dev_name(data->hwmon_dev), client->name);
++
++    return 0;
++
++exit_remove:
++    sysfs_remove_group(&client->dev.kobj, &t600_cpld_group);
++exit_free:
++    kfree(data);
++exit:
++    
++    return status;
++}
++
++static int t600_cpld_remove(struct i2c_client *client)
++{
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++
++    hwmon_device_unregister(data->hwmon_dev);
++    sysfs_remove_group(&client->dev.kobj, &t600_cpld_group);
++    kfree(data);
++
++    return 0;
++}
++
++static const struct i2c_device_id t600_cpld_id[] = {
++    { DRVNAME, 0 },
++    {}
++};
++MODULE_DEVICE_TABLE(i2c, t600_cpld_id);
++
++static struct i2c_driver t600_cpld_driver = {
++    .class        = I2C_CLASS_HWMON,
++    .driver = {
++        .name     = DRVNAME,
++    },
++    .probe        = t600_cpld_probe,
++    .remove       = t600_cpld_remove,
++    .id_table     = t600_cpld_id,
++    .address_list = normal_i2c,
++};
++
++module_i2c_driver(t600_cpld_driver);
++
++MODULE_AUTHOR("Vic Lin <vic_lin@accton.com.tw>");
++MODULE_DESCRIPTION("t600 cpld driver");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/hwmon/accton_t600_fan.c b/drivers/hwmon/accton_t600_fan.c
+new file mode 100644
+index 0000000..b96b282
+--- /dev/null
++++ b/drivers/hwmon/accton_t600_fan.c
+@@ -0,0 +1,1271 @@
++/*
++ * A hwmon driver for the Accton t600 fan cpld
++ *
++ * Copyright (C) 2014 Accton Technology Corporation.
++ * Brandon Chuang <brandon_chuang@accton.com.tw>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++ */
++
++#include <linux/module.h>
++#include <linux/jiffies.h>
++#include <linux/i2c.h>
++#include <linux/hwmon.h>
++#include <linux/hwmon-sysfs.h>
++#include <linux/err.h>
++#include <linux/mutex.h>
++#include <linux/sysfs.h>
++#include <linux/slab.h>
++#include <linux/delay.h>  //msleep
++
++#define DRVNAME "t600_fan"
++#define ENABLE_FAN_CTRL_ROUTINE	1
++
++/* Fan speed control related data
++ */
++enum fan_duty_cycle {
++	FAN_DUTY_CYCLE_50_CPLD_VAL  = 0x7,
++	FAN_DUTY_CYCLE_63_CPLD_VAL  = 0x9,
++	FAN_DUTY_CYCLE_75_CPLD_VAL  = 0xB,
++	FAN_DUTY_CYCLE_87_CPLD_VAL  = 0xD,
++	FAN_DUTY_CYCLE_MAX_CPLD_VAL = 0xF,
++	FAN_DUTY_CYCLE_DEFAULT  = FAN_DUTY_CYCLE_50_CPLD_VAL
++};
++
++#if (ENABLE_FAN_CTRL_ROUTINE == 1)
++#include <linux/fs.h>
++#include <linux/uaccess.h>
++#include <linux/syscalls.h>
++#include <linux/kthread.h>
++
++#define FAN_SPEED_CTRL_INTERVAL	3000
++#define FAN_SPEED_DELAY_DEFAULT	6
++#define DUTY_CYCLE_NONE         -1
++#define THERMAL_SENSOR_DATA_LEN 6
++
++#define FAN_REG_LED             16
++#define FAN_REG_LED_BLINK       17
++
++enum thermal_id
++{
++    THERMAL_LM75_T1,
++    THERMAL_LM75_T2,
++    THERMAL_LM75_T3,
++    THERMAL_LM75_T4,
++    THERMAL_LM75_T5,
++    THERMAL_LM75_T6,
++    THERMAL_LM75_T7,
++    THERMAL_LM75_T8,
++    NUM_OF_THERMAL_SENSOR
++};
++
++char *thermal_sensor_path[NUM_OF_THERMAL_SENSOR] = {
++"/sys/class/hwmon/hwmon8/temp1_input", /* RNR sensor from PIU1 */
++"/sys/class/hwmon/hwmon9/temp1_input", /* RNR sensor from PIU2 */
++"/sys/class/hwmon/hwmon10/temp1_input",
++"none_temp1_input",    /* skip */
++"none_temp1_input",    /* skip */
++"none_temp1_input",    /* skip */
++"none_temp1_input",    /* skip */
++"/sys/class/hwmon/hwmon2/temp1_input"
++};
++
++
++typedef struct fan_ctrl_policy {
++   int cpld_val;
++   int temp_down_adjust; /* The boundary temperature to down adjust fan speed */
++   int temp_up_adjust;   /* The boundary temperature to up adjust fan speed */
++} fan_ctrl_policy_t;
++
++fan_ctrl_policy_t  policy_lm75_20_49[] = {
++{FAN_DUTY_CYCLE_50_CPLD_VAL,	  0,   26000},
++{FAN_DUTY_CYCLE_75_CPLD_VAL,  18000,  36000},
++{FAN_DUTY_CYCLE_MAX_CPLD_VAL, 29000,	  0}
++};
++
++fan_ctrl_policy_t  policy_lm75_21_49[] = {
++{FAN_DUTY_CYCLE_50_CPLD_VAL,	  0,   26000},
++{FAN_DUTY_CYCLE_75_CPLD_VAL,  18000,  36000},
++{FAN_DUTY_CYCLE_MAX_CPLD_VAL, 29000,	  0}
++};
++
++fan_ctrl_policy_t  policy_lm75_31_48[] = {
++{FAN_DUTY_CYCLE_50_CPLD_VAL,	  0,   26000},
++{FAN_DUTY_CYCLE_75_CPLD_VAL,  18000,  36000},
++{FAN_DUTY_CYCLE_MAX_CPLD_VAL, 29000,	  0}
++};
++
++fan_ctrl_policy_t  policy_piu_03_01[] = {
++{FAN_DUTY_CYCLE_50_CPLD_VAL,	  0,   100000},
++{FAN_DUTY_CYCLE_75_CPLD_VAL,  84000,  100000},
++{FAN_DUTY_CYCLE_MAX_CPLD_VAL, 88000,	  0}
++};
++
++fan_ctrl_policy_t  policy_piu_03_02[] = {
++{FAN_DUTY_CYCLE_50_CPLD_VAL,	  0,   100000},
++{FAN_DUTY_CYCLE_75_CPLD_VAL,  84000,  100000},
++{FAN_DUTY_CYCLE_MAX_CPLD_VAL, 88000,	  0}
++};
++
++fan_ctrl_policy_t  policy_piu_04_01[] = {
++{FAN_DUTY_CYCLE_50_CPLD_VAL,	  0,   100000},
++{FAN_DUTY_CYCLE_75_CPLD_VAL,  83000,  100000},
++{FAN_DUTY_CYCLE_MAX_CPLD_VAL, 87000,	  0}
++};
++
++fan_ctrl_policy_t  policy_piu_04_02[] = {
++{FAN_DUTY_CYCLE_50_CPLD_VAL,	  0,   100000},
++{FAN_DUTY_CYCLE_75_CPLD_VAL,  83000,  100000},
++{FAN_DUTY_CYCLE_MAX_CPLD_VAL, 87000,	  0}
++};
++
++fan_ctrl_policy_t  policy_jc42_6_1a[] = {
++{FAN_DUTY_CYCLE_50_CPLD_VAL,	  0,   80000},
++{FAN_DUTY_CYCLE_75_CPLD_VAL,  72000,  80000},
++{FAN_DUTY_CYCLE_MAX_CPLD_VAL, 73000,	  0}
++};
++
++fan_ctrl_policy_t *policies[] = {
++policy_lm75_20_49,
++policy_lm75_21_49,
++policy_lm75_31_48,
++policy_piu_03_01,
++policy_piu_03_02,
++policy_piu_04_01,
++policy_piu_04_02,
++policy_jc42_6_1a
++};
++#endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
++
++
++static struct t600_fan_data *t600_fan_update_device(struct device *dev);                    
++static ssize_t fan_show_value(struct device *dev, struct device_attribute *da, char *buf);
++static ssize_t set_duty_cycle(struct device *dev, struct device_attribute *da,
++            const char *buf, size_t count);
++
++static ssize_t set_fan_enable(struct device *dev, struct device_attribute *da,
++            const char *buf, size_t count);
++static ssize_t t600_fan_blink(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++static ssize_t set_fan_watchdog(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++static ssize_t raw_access(struct device *dev, struct device_attribute *da,
++            const char *buf, size_t count);             
++            
++/* fan related data, the index should match sysfs_fan_attributes */
++static const u8 fan_reg[] = {
++    0x01,      /* fan cpld version */
++    0x0F,      /* fan 1-6 present status */
++    0x10,      /* fan 1-6 direction(0:B2F 1:F2B) */
++    0x11,      /* fan PWM(for all fan) */
++    0x12,      /* front fan 1 speed(rpm) */
++    0x13,      /* front fan 2 speed(rpm) */
++    0x14,      /* front fan 3 speed(rpm) */
++    0x15,      /* front fan 4 speed(rpm) */
++    0x16,      /* front fan 5 speed(rpm) */
++    0x22,      /* rear fan 1 speed(rpm) */
++    0x23,      /* rear fan 2 speed(rpm) */
++    0x24,      /* rear fan 3 speed(rpm) */
++    0x25,      /* rear fan 4 speed(rpm) */
++    0x26,      /* rear fan 5 speed(rpm) */
++    0x30,      /* fan power enable */
++    0x33,      /* fan watchdog */
++    0x42,      /* fan LED */
++    0x44,      /* fan LED blinking */
++};
++
++/* Each client has this additional data */
++struct t600_fan_data {
++    struct device   *hwmon_dev;
++    struct mutex     update_lock;
++    char        valid;         /* != 0 if registers are valid */
++    char        temp_is_valid; /* != 0 if temperature are valid */
++    unsigned long   last_updated;   /* In jiffies */
++    u8      reg_val[ARRAY_SIZE(fan_reg)]; /* Register value */
++
++#if (ENABLE_FAN_CTRL_ROUTINE == 1)
++    struct task_struct *fanctrl_tsk;
++    struct completion	fanctrl_update_stop;
++    struct completion   fanctrl_suspend;
++    u8  fanctrl_disabled;
++    int temp_input[NUM_OF_THERMAL_SENSOR];  /* The temperature read from thermal sensor(lm75) */
++    int duty_policie_source;
++    int duty_policie_target;
++    int speed_delay_time;
++    int speed_timer_cnt;
++#endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
++};
++
++#define FAN_PRESENT_ATTR_ID(index)      FAN##index##_PRESENT
++#define FAN_ENABLE_ATTR_ID(index)       FAN##index##_ENABLE
++#define FAN_FAULT_ATTR_ID(index)        FAN##index##_FAULT
++#define FAN_1_INPUT_ATTR_ID(index)      FAN##index##_1_INPUT
++#define FAN_2_INPUT_ATTR_ID(index)      FAN##index##_2_INPUT
++#define FAN_DIRECTION_ATTR_ID(index)    FAN##index##_DIRECTION
++#define FAN_LED_BLINK_ATTR_ID(index)    FAN##index##_LED_BLINK
++
++enum fan_id {
++    FAN1_ID,
++    FAN2_ID,
++    FAN3_ID,
++    FAN4_ID,
++    FAN5_ID,
++    NUM_OF_FAN
++};
++enum sysfs_fan_attributes {
++    CPLD_VERSION,           /* fan cpld version */
++    FAN_PRESENT_REG,
++    FAN_DIRECTION_REG,
++    FAN_PWM1,               /* FAN PWM (for all fan) */ 
++    FAN_1_INPUT_ATTR_ID(1), /* front fan X speed(rpm) */
++    FAN_1_INPUT_ATTR_ID(2),
++    FAN_1_INPUT_ATTR_ID(3),
++    FAN_1_INPUT_ATTR_ID(4),
++    FAN_1_INPUT_ATTR_ID(5),
++    FAN_2_INPUT_ATTR_ID(1), /* rear fan X speed(rpm) */
++    FAN_2_INPUT_ATTR_ID(2),
++    FAN_2_INPUT_ATTR_ID(3),
++    FAN_2_INPUT_ATTR_ID(4),
++    FAN_2_INPUT_ATTR_ID(5),     
++    FAN_ENABLE_REG,
++    FAN_WATCHDOG,
++    ACCESS,                 /* access cpld register */  
++    FAN_ENABLE_ATTR_ID(1),  /* FAN X control switch */
++    FAN_ENABLE_ATTR_ID(2),
++    FAN_ENABLE_ATTR_ID(3),
++    FAN_ENABLE_ATTR_ID(4),
++    FAN_ENABLE_ATTR_ID(5),
++    FAN_FAULT_ATTR_ID(1),   /* FAN X fault status */
++    FAN_FAULT_ATTR_ID(2),
++    FAN_FAULT_ATTR_ID(3),
++    FAN_FAULT_ATTR_ID(4),
++    FAN_FAULT_ATTR_ID(5),
++    FAN_PRESENT_ATTR_ID(1), /* fan X present */
++    FAN_PRESENT_ATTR_ID(2),
++    FAN_PRESENT_ATTR_ID(3),
++    FAN_PRESENT_ATTR_ID(4),
++    FAN_PRESENT_ATTR_ID(5),
++    FAN_DIRECTION_ATTR_ID(1), /* fan X direction*/
++    FAN_DIRECTION_ATTR_ID(2),
++    FAN_DIRECTION_ATTR_ID(3),
++    FAN_DIRECTION_ATTR_ID(4),
++    FAN_DIRECTION_ATTR_ID(5),
++    FAN_LED_BLINK_ATTR_ID(1),
++    FAN_LED_BLINK_ATTR_ID(2),
++    FAN_LED_BLINK_ATTR_ID(3),
++    FAN_LED_BLINK_ATTR_ID(4),
++    FAN_LED_BLINK_ATTR_ID(5),
++#if (ENABLE_FAN_CTRL_ROUTINE == 1)
++    FAN_DISABLE_FANCTRL,
++    FAN_PIU1_DSP1_THERMAL,
++    FAN_PIU1_DSP2_THERMAL,
++    FAN_PIU2_DSP1_THERMAL,
++    FAN_PIU2_DSP2_THERMAL,
++    FAN_SPEED_DELAY_TIME,
++#endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
++};
++
++/* Define attributes */
++#if (ENABLE_FAN_CTRL_ROUTINE == 1)
++static ssize_t show_fan_ctrl_routine(struct device *dev, struct device_attribute *da, char *buf);
++static ssize_t disable_fan_ctrl_routine(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++static ssize_t show_piu_dsp_thermal(struct device *dev, struct device_attribute *da, char *buf);
++static ssize_t set_piu_dsp_thermal(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++static ssize_t show_speed_delay_time(struct device *dev, struct device_attribute *da, char *buf);
++static ssize_t set_speed_delay_time(struct device *dev, struct device_attribute *da, const char *buf, size_t count);
++
++static SENSOR_DEVICE_ATTR(fan_disable_fanctrl, S_IWUSR | S_IRUGO, show_fan_ctrl_routine,
++										   disable_fan_ctrl_routine, FAN_DISABLE_FANCTRL);
++static SENSOR_DEVICE_ATTR(fan_piu1_dsp1_thermal, S_IWUSR | S_IRUGO, show_piu_dsp_thermal, set_piu_dsp_thermal, FAN_PIU1_DSP1_THERMAL);
++static SENSOR_DEVICE_ATTR(fan_piu1_dsp2_thermal, S_IWUSR | S_IRUGO, show_piu_dsp_thermal, set_piu_dsp_thermal, FAN_PIU1_DSP2_THERMAL);
++static SENSOR_DEVICE_ATTR(fan_piu2_dsp1_thermal, S_IWUSR | S_IRUGO, show_piu_dsp_thermal, set_piu_dsp_thermal, FAN_PIU2_DSP1_THERMAL);
++static SENSOR_DEVICE_ATTR(fan_piu2_dsp2_thermal, S_IWUSR | S_IRUGO, show_piu_dsp_thermal, set_piu_dsp_thermal, FAN_PIU2_DSP2_THERMAL);
++
++#endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
++
++#define DECLARE_FAN_FAULT_SENSOR_DEV_ATTR(index) \
++    static SENSOR_DEVICE_ATTR(fan##index##_fault, S_IRUGO, fan_show_value, NULL, FAN##index##_FAULT)
++#define DECLARE_FAN_FAULT_ATTR(index)     &sensor_dev_attr_fan##index##_fault.dev_attr.attr
++
++#define DECLARE_FAN_DIRECTION_SENSOR_DEV_ATTR(index) \
++    static SENSOR_DEVICE_ATTR(fan##index##_direction, S_IRUGO, fan_show_value, NULL, FAN##index##_DIRECTION)
++#define DECLARE_FAN_DIRECTION_ATTR(index)  &sensor_dev_attr_fan##index##_direction.dev_attr.attr
++
++#define DECLARE_FAN_PRESENT_SENSOR_DEV_ATTR(index) \
++    static SENSOR_DEVICE_ATTR(fan##index##_present, S_IRUGO, fan_show_value, NULL, FAN##index##_PRESENT)
++#define DECLARE_FAN_PRESENT_ATTR(index)   &sensor_dev_attr_fan##index##_present.dev_attr.attr
++
++#define DECLARE_FAN_SPEED_RPM_SENSOR_DEV_ATTR(index) \
++    static SENSOR_DEVICE_ATTR(fan##index##_1_input, S_IRUGO, fan_show_value, NULL, FAN##index##_1_INPUT);\
++    static SENSOR_DEVICE_ATTR(fan##index##_2_input, S_IRUGO, fan_show_value, NULL, FAN##index##_2_INPUT)
++#define DECLARE_FAN_SPEED_RPM_ATTR(index)  &sensor_dev_attr_fan##index##_1_input.dev_attr.attr, \
++                                       &sensor_dev_attr_fan##index##_2_input.dev_attr.attr
++
++static SENSOR_DEVICE_ATTR(cpld_version, S_IRUGO, fan_show_value, NULL, CPLD_VERSION);
++static SENSOR_DEVICE_ATTR(fan_watchdog, S_IWUSR | S_IRUGO, fan_show_value, set_fan_watchdog, FAN_WATCHDOG);
++static SENSOR_DEVICE_ATTR(raw_access, S_IWUSR | S_IRUGO, NULL, raw_access, ACCESS);
++static SENSOR_DEVICE_ATTR(pwm_delay_time, S_IWUSR | S_IRUGO, show_speed_delay_time, set_speed_delay_time, FAN_SPEED_DELAY_TIME);
++
++#define DECLARE_FAN_DUTY_CYCLE_SENSOR_DEV_ATTR(index) \
++    static SENSOR_DEVICE_ATTR(pwm##index, S_IWUSR | S_IRUGO, fan_show_value, set_duty_cycle, FAN_PWM1)
++#define DECLARE_FAN_DUTY_CYCLE_ATTR(index) &sensor_dev_attr_pwm##index.dev_attr.attr
++
++/* fanX enable attribute */
++#define DECLARE_FAN_ENABLE_SENSOR_DEV_ATTR(index) \
++    static SENSOR_DEVICE_ATTR(fan##index##_enable, S_IWUSR | S_IRUGO, fan_show_value, set_fan_enable, FAN##index##_ENABLE)
++#define DECLARE_FAN_ENABLE_ATTR(index)    &sensor_dev_attr_fan##index##_enable.dev_attr.attr
++
++#define DECLARE_FAN_LED_BLINK_SENSOR_DEV_ATTR(index) \
++    static SENSOR_DEVICE_ATTR(fan##index##_led_blink, S_IWUSR, NULL, t600_fan_blink, FAN##index##_LED_BLINK)
++#define DECLARE_FAN_LED_BLINK_ATTR(index)    &sensor_dev_attr_fan##index##_led_blink.dev_attr.attr
++
++
++/* 5 fan fault attributes in this platform */
++DECLARE_FAN_FAULT_SENSOR_DEV_ATTR(1);
++DECLARE_FAN_FAULT_SENSOR_DEV_ATTR(2);
++DECLARE_FAN_FAULT_SENSOR_DEV_ATTR(3);
++DECLARE_FAN_FAULT_SENSOR_DEV_ATTR(4);
++DECLARE_FAN_FAULT_SENSOR_DEV_ATTR(5);
++/* 5 fan direction attribute in this platform */
++DECLARE_FAN_DIRECTION_SENSOR_DEV_ATTR(1);  
++DECLARE_FAN_DIRECTION_SENSOR_DEV_ATTR(2);  
++DECLARE_FAN_DIRECTION_SENSOR_DEV_ATTR(3);  
++DECLARE_FAN_DIRECTION_SENSOR_DEV_ATTR(4);  
++DECLARE_FAN_DIRECTION_SENSOR_DEV_ATTR(5);  
++/* 5 fan speed(rpm) attributes in this platform */
++DECLARE_FAN_SPEED_RPM_SENSOR_DEV_ATTR(1);
++DECLARE_FAN_SPEED_RPM_SENSOR_DEV_ATTR(2);
++DECLARE_FAN_SPEED_RPM_SENSOR_DEV_ATTR(3);
++DECLARE_FAN_SPEED_RPM_SENSOR_DEV_ATTR(4);
++DECLARE_FAN_SPEED_RPM_SENSOR_DEV_ATTR(5);
++/* 5 fan present attributes in this platform */
++DECLARE_FAN_PRESENT_SENSOR_DEV_ATTR(1);
++DECLARE_FAN_PRESENT_SENSOR_DEV_ATTR(2);
++DECLARE_FAN_PRESENT_SENSOR_DEV_ATTR(3);
++DECLARE_FAN_PRESENT_SENSOR_DEV_ATTR(4);
++DECLARE_FAN_PRESENT_SENSOR_DEV_ATTR(5);
++/* 1 fan duty cycle attribute in this platform */
++DECLARE_FAN_DUTY_CYCLE_SENSOR_DEV_ATTR(1);
++/* 5 fan enable attributes in this platform */
++DECLARE_FAN_ENABLE_SENSOR_DEV_ATTR(1);
++DECLARE_FAN_ENABLE_SENSOR_DEV_ATTR(2);
++DECLARE_FAN_ENABLE_SENSOR_DEV_ATTR(3);
++DECLARE_FAN_ENABLE_SENSOR_DEV_ATTR(4);
++DECLARE_FAN_ENABLE_SENSOR_DEV_ATTR(5);
++/* 5 fan brightness attributes in this platform */
++DECLARE_FAN_LED_BLINK_SENSOR_DEV_ATTR(1);
++DECLARE_FAN_LED_BLINK_SENSOR_DEV_ATTR(2);
++DECLARE_FAN_LED_BLINK_SENSOR_DEV_ATTR(3);
++DECLARE_FAN_LED_BLINK_SENSOR_DEV_ATTR(4);
++DECLARE_FAN_LED_BLINK_SENSOR_DEV_ATTR(5);
++
++static struct attribute *t600_fan_attributes[] = {
++    &sensor_dev_attr_cpld_version.dev_attr.attr,
++    &sensor_dev_attr_raw_access.dev_attr.attr,
++    &sensor_dev_attr_fan_watchdog.dev_attr.attr,
++    DECLARE_FAN_ENABLE_ATTR(1),
++    DECLARE_FAN_ENABLE_ATTR(2),
++    DECLARE_FAN_ENABLE_ATTR(3),
++    DECLARE_FAN_ENABLE_ATTR(4),
++    DECLARE_FAN_ENABLE_ATTR(5), 
++    DECLARE_FAN_DUTY_CYCLE_ATTR(1), 
++    /* fan related attributes */
++    DECLARE_FAN_FAULT_ATTR(1),
++    DECLARE_FAN_FAULT_ATTR(2),
++    DECLARE_FAN_FAULT_ATTR(3),
++    DECLARE_FAN_FAULT_ATTR(4),
++    DECLARE_FAN_FAULT_ATTR(5),
++    DECLARE_FAN_DIRECTION_ATTR(1),
++    DECLARE_FAN_DIRECTION_ATTR(2),
++    DECLARE_FAN_DIRECTION_ATTR(3),
++    DECLARE_FAN_DIRECTION_ATTR(4),
++    DECLARE_FAN_DIRECTION_ATTR(5),
++    DECLARE_FAN_SPEED_RPM_ATTR(1),
++    DECLARE_FAN_SPEED_RPM_ATTR(2),
++    DECLARE_FAN_SPEED_RPM_ATTR(3),
++    DECLARE_FAN_SPEED_RPM_ATTR(4),
++    DECLARE_FAN_SPEED_RPM_ATTR(5),
++    DECLARE_FAN_PRESENT_ATTR(1),
++    DECLARE_FAN_PRESENT_ATTR(2),
++    DECLARE_FAN_PRESENT_ATTR(3),
++    DECLARE_FAN_PRESENT_ATTR(4),
++    DECLARE_FAN_PRESENT_ATTR(5),
++    DECLARE_FAN_LED_BLINK_ATTR(1),
++    DECLARE_FAN_LED_BLINK_ATTR(2),
++    DECLARE_FAN_LED_BLINK_ATTR(3),
++    DECLARE_FAN_LED_BLINK_ATTR(4),
++    DECLARE_FAN_LED_BLINK_ATTR(5),
++#if (ENABLE_FAN_CTRL_ROUTINE == 1)
++    &sensor_dev_attr_fan_disable_fanctrl.dev_attr.attr,
++    &sensor_dev_attr_fan_piu1_dsp1_thermal.dev_attr.attr,
++    &sensor_dev_attr_fan_piu1_dsp2_thermal.dev_attr.attr,
++    &sensor_dev_attr_fan_piu2_dsp1_thermal.dev_attr.attr,
++    &sensor_dev_attr_fan_piu2_dsp2_thermal.dev_attr.attr,
++    &sensor_dev_attr_pwm_delay_time.dev_attr.attr,
++#endif
++    NULL
++};
++
++#define FAN_DUTY_CYCLE_REG_MASK         0x0F
++#define FAN_MAX_DUTY_CYCLE              255
++#define FAN_REG_VAL_TO_SPEED_RPM_STEP       100
++#define FAN_MAX_WATCHDOG_SECONDS        255
++#define I2C_RW_RETRY_COUNT          10
++#define I2C_RW_RETRY_INTERVAL           60 /* ms */
++
++static int t600_fan_read_value(struct i2c_client *client, u8 reg)
++{
++    int status = 0, retry = I2C_RW_RETRY_COUNT;
++
++    while (retry) {
++        status = i2c_smbus_read_byte_data(client, reg);
++        if (unlikely(status < 0)) {
++            msleep(I2C_RW_RETRY_INTERVAL);
++            retry--;
++            continue;
++        }
++
++        break;
++    }
++
++    return status;
++}
++static int t600_fan_write_value(struct i2c_client *client, u8 reg, u8 value)
++{
++    int status = 0, retry = I2C_RW_RETRY_COUNT;
++
++    while (retry) {
++        status = i2c_smbus_write_byte_data(client, reg, value);
++        if (unlikely(status < 0)) {
++            msleep(I2C_RW_RETRY_INTERVAL);
++            retry--;
++            continue;
++        }
++
++        break;
++    }
++
++    return status;
++}
++
++/* fan utility functions */
++static u32 reg_val_to_duty_cycle(u8 reg_val) 
++{
++    if (reg_val < 0x1){
++        return 0;
++     }
++
++    reg_val &= FAN_DUTY_CYCLE_REG_MASK;
++    return ((reg_val << 4) + 15);
++}
++static u8 duty_cycle_to_reg_val(u8 duty_cycle) 
++{
++    return (duty_cycle >> 4);
++}
++static u32 reg_val_to_speed_rpm(u8 reg_val)
++{
++    return (u32)reg_val * FAN_REG_VAL_TO_SPEED_RPM_STEP;
++}
++static u8 reg_val_to_direction(u8 reg_val, enum fan_id id)
++{
++    u8 mask = (1 << id);
++
++    reg_val &= mask;
++
++    return reg_val ? 1 : 0;
++}
++static u8 reg_val_to_is_present(u8 reg_val, enum fan_id id)
++{
++    u8 mask = (1 << id);
++
++    reg_val &= mask;
++
++    return reg_val ? 0 : 1;
++}
++static u8 reg_val_to_is_enable(u8 reg_val, enum fan_id id)
++{
++    u8 mask = (1 << id);
++
++    reg_val &= mask;
++
++    return reg_val ? 1 : 0;
++}
++static u8 is_fan_failed(struct t600_fan_data *data, enum fan_id id)
++{
++    u8 ret = 1;
++    int front_fan_index = FAN_1_INPUT_ATTR_ID(1) + id;
++    int rear_fan_index  = FAN_2_INPUT_ATTR_ID(1)  + id;
++
++    /* Check if the speed of front or rear fan is ZERO,  
++     */
++    if (reg_val_to_speed_rpm(data->reg_val[front_fan_index]) &&
++        reg_val_to_speed_rpm(data->reg_val[rear_fan_index]))  {
++        ret = 0;
++    }
++    return ret;
++}
++static int fan_set_duty_cycle_to_cpld(struct i2c_client *client, int new_duty_cycle)
++{
++    struct t600_fan_data *data = i2c_get_clientdata(client);
++    u8 reg = fan_reg[0x3];
++    int ret;
++    
++    if (new_duty_cycle < 1 || new_duty_cycle > 16) {
++        new_duty_cycle = 16;   /* New CPLD value range: 1 ~ 16*/
++    }
++
++    /* Update duty cycle
++     */
++    mutex_lock(&data->update_lock);
++    data->reg_val[FAN_PWM1] = new_duty_cycle;
++    ret = t600_fan_write_value(client, reg, new_duty_cycle);
++    mutex_unlock(&data->update_lock);
++    
++    return ret;
++}
++static ssize_t set_duty_cycle(struct device *dev, struct device_attribute *da,
++            const char *buf, size_t count) 
++{
++    int error, value;
++    struct i2c_client *client = to_i2c_client(dev);
++    
++    error = kstrtoint(buf, 10, &value);
++    if (error) {
++        return error;
++    }
++        
++    if (value < 0 || value > FAN_MAX_DUTY_CYCLE) {
++        return -EINVAL;
++    }
++    
++    fan_set_duty_cycle_to_cpld(client, duty_cycle_to_reg_val(value));
++    
++    return count;
++}
++static int fan_set_enable_to_cpld(struct i2c_client *client, u8 reg, int index, int new_value)
++{
++    struct t600_fan_data *data = i2c_get_clientdata(client);
++    int ret;
++                
++    mutex_lock(&data->update_lock);
++    data->reg_val[index] = new_value;
++    ret = t600_fan_write_value(client, reg, new_value);
++    mutex_unlock(&data->update_lock);
++    
++    return ret;
++}
++static ssize_t set_fan_enable(struct device *dev, struct device_attribute *da, const char *buf, size_t count) 
++{
++    int error, value, index;
++    u8 reg = 0, mask = 0;
++    int regval;
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_fan_data *data = i2c_get_clientdata(client);
++
++    error = kstrtoint(buf, 10, &value);
++    if (error) {
++        return error;
++    }
++        
++    if (value < 0 || value > 1) {
++        return -EINVAL;
++    }
++    reg  = fan_reg[FAN_ENABLE_REG];
++    regval = data->reg_val[FAN_ENABLE_REG];
++    mask = 0x1 << (attr->index - FAN1_ENABLE);
++    regval = value ? (regval | mask) : (regval & ~mask);    
++    index = FAN_ENABLE_REG;
++    fan_set_enable_to_cpld(client, reg, index, regval);
++
++    return count;
++}
++
++static ssize_t set_fan_watchdog(struct device *dev, struct device_attribute *da, const char *buf, size_t count) 
++{
++    int error, value, index;
++    u8 reg = 0, mask = 0x1;
++    int regval;
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_fan_data *data = i2c_get_clientdata(client);
++
++    error = kstrtoint(buf, 10, &value);
++    if (error) {
++        return error;
++    }
++        
++    if (value < 0 || value > 1) {
++        return -EINVAL;
++    }
++    reg  = fan_reg[FAN_WATCHDOG];
++    regval = data->reg_val[FAN_WATCHDOG];
++    regval = value ? (regval | mask) : (regval & ~mask);    
++    index = FAN_WATCHDOG;
++    fan_set_enable_to_cpld(client, reg, index, regval);
++
++    return count;
++}
++
++static ssize_t t600_fan_blink(struct device *dev, struct device_attribute *da, const char *buf, size_t count) 
++{
++    int error, value, status, ret;
++    u8 reg = 0, mask = 0;
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_fan_data *data = i2c_get_clientdata(client);
++
++    error = kstrtoint(buf, 10, &value);
++    if (error) {
++        return error;
++    }
++
++    if (value < 0 || value > 1) {
++        return -EINVAL;
++    }
++
++    mask = 1 << (attr->index - FAN_LED_BLINK_ATTR_ID(1) + 3);
++    if (1 == value) {
++        mutex_lock(&data->update_lock);
++        reg = fan_reg[FAN_REG_LED];
++        status = t600_fan_read_value(client, reg);
++        status |= mask;
++        ret = t600_fan_write_value(client, reg, status);
++
++        reg = fan_reg[FAN_REG_LED_BLINK];
++        status = t600_fan_read_value(client, reg);
++        status |= mask;
++        ret = t600_fan_write_value(client, reg, status);
++        mutex_unlock(&data->update_lock);
++    }
++    else {
++        mutex_lock(&data->update_lock);
++        reg = fan_reg[FAN_REG_LED];
++        status = t600_fan_read_value(client, reg);
++        status &= ~mask;
++        ret = t600_fan_write_value(client, reg, status);
++
++        reg = fan_reg[FAN_REG_LED_BLINK];
++        status = t600_fan_read_value(client, reg);
++        status &= ~mask;
++        ret = t600_fan_write_value(client, reg, status);
++        mutex_unlock(&data->update_lock);
++    }
++
++    return count;
++}
++
++static ssize_t raw_access(struct device *dev, struct device_attribute *da,
++            const char *buf, size_t count)
++{
++    u32 addr, val;
++    
++        int status;
++        struct i2c_client *client = to_i2c_client(dev);
++        struct t600_fan_data *data = i2c_get_clientdata(client);
++
++    if (sscanf(buf, "0x%x 0x%x", &addr, &val) != 2) {
++        return -EINVAL;
++    }
++
++    if (addr > 0xFF || val > 0xFF) {
++        return -EINVAL;
++    }
++
++    mutex_lock(&data->update_lock);
++    status = t600_fan_write_value(client, addr, val);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++    mutex_unlock(&data->update_lock);
++    return count;
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;  
++
++
++}
++
++static ssize_t fan_show_value(struct device *dev, struct device_attribute *da,
++             char *buf)
++{
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++    struct t600_fan_data *data = t600_fan_update_device(dev);
++    ssize_t ret = 0;
++    
++    if (data->valid) {
++        switch (attr->index) {
++            case FAN_PWM1:
++            {
++                u32 duty_cycle = reg_val_to_duty_cycle(data->reg_val[FAN_PWM1]);
++                ret = sprintf(buf, "%u\n", duty_cycle);
++                break;
++            }
++            case FAN_1_INPUT_ATTR_ID(1):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_1_INPUT_ATTR_ID(5)]));
++                break;
++            case FAN_1_INPUT_ATTR_ID(2):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_1_INPUT_ATTR_ID(4)]));
++                break;
++            case FAN_1_INPUT_ATTR_ID(3):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_1_INPUT_ATTR_ID(3)]));
++                break;
++            case FAN_1_INPUT_ATTR_ID(4):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_1_INPUT_ATTR_ID(2)]));
++                break;
++            case FAN_1_INPUT_ATTR_ID(5):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_1_INPUT_ATTR_ID(1)]));
++                break;
++            case FAN_2_INPUT_ATTR_ID(1):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_2_INPUT_ATTR_ID(5)]));
++                break;
++            case FAN_2_INPUT_ATTR_ID(2):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_2_INPUT_ATTR_ID(4)]));
++                break;
++            case FAN_2_INPUT_ATTR_ID(3):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_2_INPUT_ATTR_ID(3)]));
++                break;
++            case FAN_2_INPUT_ATTR_ID(4):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_2_INPUT_ATTR_ID(2)]));
++                break;
++            case FAN_2_INPUT_ATTR_ID(5):
++                ret = sprintf(buf, "%u\n", reg_val_to_speed_rpm(data->reg_val[FAN_2_INPUT_ATTR_ID(1)]));
++                break;
++
++            case FAN_DIRECTION_ATTR_ID(1)...FAN_DIRECTION_ATTR_ID(5):
++                ret = sprintf(buf, "%d\n", 
++                              reg_val_to_direction(data->reg_val[FAN_DIRECTION_REG],
++                              FAN_DIRECTION_ATTR_ID(5) - attr->index));
++                                                      
++                break;
++            case FAN_PRESENT_ATTR_ID(1)...FAN_PRESENT_ATTR_ID(5):
++                ret = sprintf(buf, "%d\n",
++                              reg_val_to_is_present(data->reg_val[FAN_PRESENT_REG],
++                              FAN_PRESENT_ATTR_ID(5) - attr->index));
++                break;
++            case FAN_FAULT_ATTR_ID(1)...FAN_FAULT_ATTR_ID(5):
++                ret = sprintf(buf, "%d\n", is_fan_failed(data, FAN_FAULT_ATTR_ID(5) - attr->index));
++                break;
++            case CPLD_VERSION:
++                ret = sprintf(buf, "%d\n", data->reg_val[CPLD_VERSION]);
++                break;
++
++            case FAN_ENABLE_ATTR_ID(1)...FAN_ENABLE_ATTR_ID(5):
++                ret = sprintf(buf, "%d\n",
++                              reg_val_to_is_enable(data->reg_val[FAN_ENABLE_REG],
++                              FAN_ENABLE_ATTR_ID(5) - attr->index));
++                break;
++
++            case FAN_WATCHDOG:
++                ret = sprintf(buf, "%d\n",
++                              reg_val_to_is_enable(data->reg_val[FAN_WATCHDOG], 0) );
++                break;
++                
++            default:
++                break;
++        }       
++    }
++    
++    return ret;
++}
++
++#if (ENABLE_FAN_CTRL_ROUTINE == 1)
++static u8 is_any_fan_failed(struct t600_fan_data *data)
++{
++	int i = 0;
++
++	for (i = 0; i < NUM_OF_FAN; i++) {
++		if (is_fan_failed(data, i)) {
++			return 1;
++		}
++	}
++
++	return 0;
++}
++
++static ssize_t show_speed_delay_time(struct device *dev, struct device_attribute *da,
++			 char *buf)
++{
++	struct i2c_client *client = to_i2c_client(dev);
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++
++	return sprintf(buf, "%d\n", data->speed_delay_time);
++}
++
++static ssize_t set_speed_delay_time(struct device *dev, struct device_attribute *da,
++			const char *buf, size_t count)
++{
++	int error, value;
++	struct i2c_client *client = to_i2c_client(dev);
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++
++	error = kstrtoint(buf, 10, &value);
++	if (error) {
++		return error;
++	}
++	if (value < 0){
++		return -1;
++	}
++
++	/* Delay time is multiple by FAN_SPEED_CTRL_INTERVAL */
++	data->speed_timer_cnt = value / (FAN_SPEED_CTRL_INTERVAL / 1000);
++	data->speed_delay_time = data->speed_timer_cnt * (FAN_SPEED_CTRL_INTERVAL / 1000);
++
++	return count;
++}
++
++
++static ssize_t show_fan_ctrl_routine(struct device *dev, struct device_attribute *da,
++			 char *buf)
++{
++	struct i2c_client *client = to_i2c_client(dev);
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++
++	return sprintf(buf, "%d\n", data->fanctrl_disabled);
++}
++
++static ssize_t disable_fan_ctrl_routine(struct device *dev, struct device_attribute *da,
++			const char *buf, size_t count)
++{
++	int error, value;
++	struct i2c_client *client = to_i2c_client(dev);
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++
++	error = kstrtoint(buf, 10, &value);
++	if (error) {
++		return error;
++	}
++
++	data->fanctrl_disabled = value ? 1 : 0;
++
++	if (data->fanctrl_disabled) {
++		wait_for_completion(&data->fanctrl_suspend);
++	}
++	else {
++		init_completion(&data->fanctrl_suspend);
++	}
++
++	return count;
++}
++
++static ssize_t show_piu_dsp_thermal(struct device *dev, struct device_attribute *da, char *buf)
++{
++    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++	struct i2c_client *client = to_i2c_client(dev);
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++    int piu_dsp_temp_input = 0;
++
++	switch(attr->index)
++	{
++		case FAN_PIU1_DSP1_THERMAL:
++			piu_dsp_temp_input = data->temp_input[3];
++			break;
++		case FAN_PIU1_DSP2_THERMAL:
++			piu_dsp_temp_input = data->temp_input[4];
++			break;
++		case FAN_PIU2_DSP1_THERMAL:
++			piu_dsp_temp_input = data->temp_input[5];
++			break;
++		case FAN_PIU2_DSP2_THERMAL:
++			piu_dsp_temp_input = data->temp_input[6];
++			break;
++		default:
++			break;
++    }
++    
++	return sprintf(buf, "%d\n", piu_dsp_temp_input);
++}
++
++static ssize_t set_piu_dsp_thermal(struct device *dev, struct device_attribute *da,
++			const char *buf, size_t count)
++{
++	int error, value;
++	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
++	struct i2c_client *client = to_i2c_client(dev);
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++
++	error = kstrtoint(buf, 10, &value);
++	if (error) {
++		return error;
++	}
++
++	switch(attr->index)
++	{
++		case FAN_PIU1_DSP1_THERMAL:
++			data->temp_input[3] = value;
++			break;
++		case FAN_PIU1_DSP2_THERMAL:
++			data->temp_input[4] = value;
++			break;
++		case FAN_PIU2_DSP1_THERMAL:
++			data->temp_input[5] = value;
++			break;
++		case FAN_PIU2_DSP2_THERMAL:
++			data->temp_input[6] = value;
++			break;
++		default:
++			break;
++    }
++
++	return count;
++}
++
++static int read_file_contents(char *path, char *buf, long data_len, struct device *dev)
++{
++	int status, retry = I2C_RW_RETRY_COUNT;
++
++	while (retry) {
++		struct file *fp = filp_open(path, O_RDONLY, 0);
++		status = 0;
++
++		if (IS_ERR(fp)) {
++			status = PTR_ERR(fp);
++			msleep(I2C_RW_RETRY_INTERVAL);
++			retry--;
++			continue;
++		}
++
++		kernel_read(fp, 0, buf, data_len);
++		filp_close(fp, NULL);
++		break;
++	}
++
++    return status;
++}
++
++static struct t600_fan_data *t600_fan_update_temperature(struct device *dev)
++{
++	struct i2c_client *client = to_i2c_client(dev);
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++	int i = 0;
++	char temp[NUM_OF_THERMAL_SENSOR][THERMAL_SENSOR_DATA_LEN+1];
++
++	data->temp_is_valid = 0;
++
++	/* Update temperature
++	 */
++	for (i = 0; i < NUM_OF_THERMAL_SENSOR; i++) {
++		if ((i >= 3) && (i <= 6)){
++				continue;
++		}
++
++		memset(temp[i], 0, sizeof(temp[i]));
++		if (read_file_contents(thermal_sensor_path[i], temp[i], sizeof(temp[i]), &client->dev) == 0) {
++			temp[i][sizeof(temp[i])-1] = '\0';
++
++			if (kstrtoint(temp[i], 10, &data->temp_input[i]) != 0) {
++				switch(i)
++				{
++					/* Ignore RNR sensors because they might be removed */
++					case THERMAL_LM75_T1:
++					case THERMAL_LM75_T2:
++					case THERMAL_LM75_T4:
++					case THERMAL_LM75_T5:
++					case THERMAL_LM75_T6:
++					case THERMAL_LM75_T7:
++						continue;
++						break;
++					default:
++						dev_err(&client->dev, "Failed to convert temperature read from (%s)\n", thermal_sensor_path[i]);
++						goto exit;
++				}
++			}
++		}
++		else {
++			dev_err(&client->dev, "Failed to read temperature from (%s)\n", thermal_sensor_path[i]);
++			goto exit;
++		}
++	}
++
++	data->temp_is_valid = 1;
++
++exit:
++	return data;
++}
++
++static void set_fan_speed_by_temp(struct i2c_client *client, struct t600_fan_data *data) {
++	int  i, j, policy_items, old_duty_cycle, new_duty_cycle = 0;
++	fan_ctrl_policy_t *policy;
++
++	old_duty_cycle = data->reg_val[FAN_PWM1];
++
++	/* Adjust new duty cycle
++	 */
++	for (i = 0; i < ARRAY_SIZE(policies); i++) {
++		int temperature;
++		policy       = policies[i];
++		policy_items = ARRAY_SIZE(policy_lm75_20_49);
++		temperature  = data->temp_input[i];
++
++		for (j = 0; j < policy_items; j++) {
++			if (policy[j].cpld_val != old_duty_cycle) {
++				continue;
++			}
++
++			break;
++		}
++
++		if (j >= policy_items) {
++			continue;
++		}
++
++		if ((temperature > policy[j].temp_up_adjust) && (policy[j].temp_up_adjust != 0)) {
++			if (policy[j+1].cpld_val > new_duty_cycle) {
++				new_duty_cycle = policy[j+1].cpld_val;
++			}
++		}
++		else if ((temperature <= policy[j].temp_down_adjust) && (policy[j].temp_down_adjust != 0)) {
++			if (policy[j-1].cpld_val > new_duty_cycle) {
++				new_duty_cycle = policy[j-1].cpld_val;
++			}
++		}
++		else {
++			if (old_duty_cycle > new_duty_cycle) {
++				new_duty_cycle = old_duty_cycle;
++			}
++		}
++	}
++
++	/* Check if current duty is found in policy list */
++	if (!new_duty_cycle) {
++		if (old_duty_cycle < FAN_DUTY_CYCLE_75_CPLD_VAL){
++			new_duty_cycle = FAN_DUTY_CYCLE_75_CPLD_VAL;
++		}
++		else {
++			new_duty_cycle = FAN_DUTY_CYCLE_MAX_CPLD_VAL;
++		}
++	}
++
++	/* Check if duty cycle is changed */
++	if (new_duty_cycle == old_duty_cycle) {
++		return;
++	}
++
++	/* Start setting duty cycle when duty_policie_source is not DUTY_CYCLE_NONE */
++	data->duty_policie_source = old_duty_cycle;
++	data->duty_policie_target = new_duty_cycle;
++	data->speed_timer_cnt= data->speed_delay_time / (FAN_SPEED_CTRL_INTERVAL / 1000);
++}
++
++static void set_fan_speed_gradually(struct i2c_client *client, struct t600_fan_data *data) {
++	int current_duty_cycle = data->reg_val[FAN_PWM1];
++
++	if(data->duty_policie_target == current_duty_cycle){
++		/* Stop setting duty cycle */
++		data->duty_policie_source = DUTY_CYCLE_NONE;
++		data->duty_policie_target = DUTY_CYCLE_NONE;
++		return;
++	}
++	if(data->speed_timer_cnt > 1){
++		data->speed_timer_cnt--;
++		return;
++	}
++
++	data->speed_timer_cnt= data->speed_delay_time / (FAN_SPEED_CTRL_INTERVAL / 1000);
++	if(data->duty_policie_target > data->duty_policie_source){
++		fan_set_duty_cycle_to_cpld(client, current_duty_cycle + 1);
++	}
++	else{
++		fan_set_duty_cycle_to_cpld(client, current_duty_cycle - 1);
++	}
++}
++
++static int fan_speed_ctrl_routine(void *arg)
++{
++	struct i2c_client *client = (struct i2c_client *)arg;
++	struct t600_fan_data *data = i2c_get_clientdata(client);
++
++	while (!kthread_should_stop())
++	{
++		msleep(FAN_SPEED_CTRL_INTERVAL);
++
++		if (data->fanctrl_disabled) {
++			complete_all(&data->fanctrl_suspend);
++			continue;
++		}
++
++		/* Update fan status
++		 */
++		t600_fan_update_device(&client->dev);
++
++		mutex_lock(&data->update_lock);
++		t600_fan_update_temperature(&client->dev);
++		mutex_unlock(&data->update_lock);
++
++		/* Set fan speed as max if one of the following state occurs:
++		 * 1. Invalid fan data
++		 */
++		if (!data->temp_is_valid ) {
++			fan_set_duty_cycle_to_cpld(client, FAN_DUTY_CYCLE_MAX_CPLD_VAL);
++			continue;
++		}
++
++		if (data->duty_policie_source == DUTY_CYCLE_NONE){
++			/* Set fan speed by current duty cycle and temperature */
++			set_fan_speed_by_temp(client, data);
++		}
++		else{
++			set_fan_speed_gradually(client, data);
++		}
++	}
++
++	if (data != NULL) {
++		complete_all(&data->fanctrl_update_stop);
++	}
++
++	return 0;
++}
++#endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
++
++
++static const struct attribute_group t600_fan_group = {
++    .attrs = t600_fan_attributes,
++};
++
++static struct t600_fan_data *t600_fan_update_device(struct device *dev)
++{
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_fan_data *data = i2c_get_clientdata(client);
++
++    mutex_lock(&data->update_lock);
++
++    if (time_after(jiffies, data->last_updated + HZ + HZ / 2) || 
++        !data->valid) {
++        int i;
++
++        dev_dbg(&client->dev, "Starting t600_fan update\n");
++        data->valid = 0;
++        
++        /* Update fan data
++         */
++        for (i = 0; i < ARRAY_SIZE(data->reg_val); i++) {
++            int status = t600_fan_read_value(client, fan_reg[i]);
++            
++            if (status < 0) {
++                printk(KERN_INFO "reg %d, err %d\r\n", fan_reg[i], status);
++                dev_dbg(&client->dev, "reg %d, err %d\n", fan_reg[i], status);
++                goto exit;
++            }
++            else {
++                data->reg_val[i] = status;
++            }
++        }
++        data->last_updated = jiffies;
++        data->valid = 1;
++    }
++
++exit:   
++    mutex_unlock(&data->update_lock);
++
++    return data;
++}
++
++static int t600_fan_probe(struct i2c_client *client,
++            const struct i2c_device_id *dev_id)
++{
++    struct t600_fan_data *data;
++    int status;
++
++    if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA)) {
++        status = -EIO;
++        goto exit;
++    }
++    data = kzalloc(sizeof(struct t600_fan_data), GFP_KERNEL);
++    if (!data) {
++        status = -ENOMEM;
++        goto exit;
++    }
++    i2c_set_clientdata(client, data);
++    data->valid = 0;
++    mutex_init(&data->update_lock);
++
++    dev_info(&client->dev, "chip found\n");
++
++    /* Register sysfs hooks */
++    status = sysfs_create_group(&client->dev.kobj, &t600_fan_group);
++    if (status) {
++        goto exit_free;
++    }
++    data->hwmon_dev = hwmon_device_register(&client->dev);
++    if (IS_ERR(data->hwmon_dev)) {
++        status = PTR_ERR(data->hwmon_dev);
++        goto exit_remove;
++    }
++
++    dev_info(&client->dev, "%s: fan '%s'\n",
++         dev_name(data->hwmon_dev), client->name);
++
++#if (ENABLE_FAN_CTRL_ROUTINE == 1)
++    /* initialize fan speed control routine */
++    init_completion(&data->fanctrl_update_stop);
++    init_completion(&data->fanctrl_suspend);
++    data->fanctrl_disabled = 0;
++    data->fanctrl_tsk = kthread_run(fan_speed_ctrl_routine, client, "accton_t600_fanctl");
++
++    if (IS_ERR(data->fanctrl_tsk)) {
++        status = PTR_ERR(data->fanctrl_tsk);
++        goto exit_remove;
++    }
++
++    data->speed_delay_time = FAN_SPEED_DELAY_DEFAULT;
++    data->speed_timer_cnt = FAN_SPEED_DELAY_DEFAULT / (FAN_SPEED_CTRL_INTERVAL / 1000);
++    data->duty_policie_source = DUTY_CYCLE_NONE;
++    data->duty_policie_target= DUTY_CYCLE_NONE;
++#endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
++
++    return 0;
++
++exit_remove:
++    sysfs_remove_group(&client->dev.kobj, &t600_fan_group);
++exit_free:
++    kfree(data);
++exit:
++    
++    return status;
++}
++static int t600_fan_remove(struct i2c_client *client)
++{
++    struct t600_fan_data *data = i2c_get_clientdata(client);
++
++#if (ENABLE_FAN_CTRL_ROUTINE == 1)
++    kthread_stop(data->fanctrl_tsk);
++    wait_for_completion(&data->fanctrl_update_stop);
++#endif /* (ENABLE_FAN_CTRL_ROUTINE == 1) */
++
++    hwmon_device_unregister(data->hwmon_dev);
++    sysfs_remove_group(&client->dev.kobj, &t600_fan_group);
++    kfree(data);
++    
++    return 0;
++}
++/* Addresses to scan */
++static const unsigned short normal_i2c[] = { I2C_CLIENT_END };
++static const struct i2c_device_id t600_fan_id[] = {
++    { DRVNAME, 0 },
++    {}
++};
++MODULE_DEVICE_TABLE(i2c, t600_fan_id);
++static struct i2c_driver t600_fan_driver = {
++    .class      = I2C_CLASS_HWMON,
++    .driver = {
++        .name    = DRVNAME,
++    },
++    .probe      = t600_fan_probe,
++    .remove    = t600_fan_remove,
++    .id_table    = t600_fan_id,
++    .address_list = normal_i2c,
++};
++module_i2c_driver(t600_fan_driver);
++MODULE_AUTHOR("Vic Lin <vic_lin@accton.com.tw>");
++MODULE_DESCRIPTION("t600_fan driver");
++MODULE_LICENSE("GPL");
++
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index c2d3eb7..da4c926 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -10,6 +10,15 @@ config SENSORS_LIS3LV02D
+ 	select INPUT_POLLDEV
+ 	default n
+ 
++config ACCTON_T600_MDEC
++	tristate "Accton T600 PCI FPGA Device"
++	depends on PCI && SYSFS
++	help
++	  If you say yes here you get support for Accton t600 mdec FPGA.
++
++	  This driver can also be built as a module.  If so, the module
++	  will be called accton_t600_fj_mdec.
++
+ config AD525X_DPOT
+ 	tristate "Analog Devices Digital Potentiometers"
+ 	depends on (I2C || SPI) && SYSFS
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index 4f4e74b..58b80e4 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -3,6 +3,7 @@
+ #
+ 
+ obj-$(CONFIG_IBM_ASM)		+= ibmasm/
++obj-$(CONFIG_ACCTON_T600_MDEC)	+= accton_t600_fj_mdec.o
+ obj-$(CONFIG_AD525X_DPOT)	+= ad525x_dpot.o
+ obj-$(CONFIG_AD525X_DPOT_I2C)	+= ad525x_dpot-i2c.o
+ obj-$(CONFIG_AD525X_DPOT_SPI)	+= ad525x_dpot-spi.o
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+new file mode 100644
+index 0000000..659a424
+--- /dev/null
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -0,0 +1,1403 @@
++/*-----------------------------------------------------------------------------
++ * FILE NAME: mdec_fpga.c
++ *-----------------------------------------------------------------------------
++ * PURPOSE:
++ *    This file provides the function to control resources of FPGA device.
++ *
++ * NOTES:
++ *    None.
++ *
++ * HISTORY:
++ *    09/07/2018(v0.04) - Roy Chuang, 1. Integrate with blade board R0A
++ *                                    2. Fixed endian issue
++ *                                    3. Fixed PCI bar address to BAR0
++ *    03/07/2018(v0.03) - Vincent Wang, 1. Update vendor and device ID(CDEC, MBCNT, MDEC) into driver's PCI table
++                                        2. Fixed some typo issue
++ *    26/06/2018(v0.02) - Vincent Wang, 1. Create MDEC EEPROM node. 
++ *                                      2. Remove redundancy of read_port_eeprom() function 
++ *    23/05/2018(v0.01) - Vincent Wang, Created.
++ * Copyright(C)           Accton Corporation, 2017-2018
++ *-----------------------------------------------------------------------------
++ */
++#include <linux/types.h>
++#include <linux/version.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/device.h>
++#include <linux/pci.h>
++#include <linux/hwmon.h>
++#include <linux/hwmon-sysfs.h>
++#include <linux/err.h>
++#include <linux/mutex.h>
++#include <linux/sysfs.h>
++#include <linux/slab.h>
++#include <linux/delay.h>
++#include <linux/interrupt.h>
++#include <linux/unistd.h>
++#include <linux/delay.h>
++#include <linux/of.h>
++#include <linux/of_device.h>
++
++#define FPGA_MNG_I2C_WORKAROUND                                 0
++#define DRIVER_NAME                                             "fujitsu_mdec_fpga"
++#define DRIVER_DESCRIPTION_NAME                                 "Fujitsu FPGA PCI device driver"
++#define DRIVER_VERSION                                          "0.04"
++#define DRIVER_DEBUG_MESSAGE_LEVEL                              8
++#define DRIVER_MAX_BUFFER_LENGTH                                16
++#define DRIVER_MAX_STRING_LENGTH                                (DRIVER_MAX_BUFFER_LENGTH - 1)
++#define KERNEL_RESOLUTION_SCALAR                                1000
++#define MDIO_STATUS_CHK_RETRY_COUNT                             100
++#define MDIO_BUS_CHK_RETRY_COUNT                                5
++#define MDIO_SLEEP_TIME                                         30 /* micro second */
++#define MDIO_CHK_STATUS_RETRY_INTERVAL                          6 /* micro second */
++#define MDIO_WRITE_MODE                                         (0x0001)
++#define MDIO_READ_MODE                                          (0x0000)
++#define MDIO_STATUS_DONE                                        (0x0001)
++#define MDIO_DATA_SIZE_1                                        (0x0001)
++#define MDIO_DATA_SIZE_2                                        (0x0002)
++#define MDIO_WRITE_CMD1                                         0x000A  // 1010
++#define MDIO_WRITE_CMD2                                         0x0006  // 0110
++#define MDIO_READ_CMD1                                          0x0009  // 1001
++#define MDIO_READ_CMD2                                          0x0005  // 0101
++#define MDIO_BUS_CHK_OK                                         0x0000  // TBD
++#define MDIO_STATUS_BUSY                                        0x0001  // TBD
++
++// MDEC
++#define MDEC_WRITE_MODE                                         (0x0001)
++#define MDEC_READ_MODE                                          (0x0000)
++#define MDEC_EEPROM_SIZE                                        512
++#define MDEC_EEPROM_ADDR                                        0x00F00000
++
++// I2C
++#define I2C_WRITE_MODE                                          (0x01)
++#define I2C_READ_MODE                                           (0x00)
++#define I2C_CHK_BUS_BUSY_RETRY_COUNT                            200
++#define I2C_READ_STATUS_RETRY_COUNT                             3
++#define I2C_ACC_CMD_WRITE                                       0x00000002
++#define I2C_ACC_CMD_READ                                        0x00000001
++
++// QSFP EEPROM
++#define QSFP_EEPROM_SIZE                                        256
++// port hex
++#define PORT1_HEX                                               0x00
++#define PORT2_HEX                                               0x01
++#define PORT3_HEX                                               0x02
++#define PORT4_HEX                                               0x03
++#define PORT5_HEX                                               0x04
++#define PORT6_HEX                                               0x05
++#define PORT7_HEX                                               0x06
++#define PORT8_HEX                                               0x07
++#define PORT9_HEX                                               0x08
++#define PORT10_HEX                                              0x09
++#define PORT11_HEX                                              0x0a
++#define PORT12_HEX                                              0x0b
++#define POS_127_HEX                                             0x7F
++
++#define PCI_DEVICE_ID_CDEC                                      0x0000
++#define PCI_DEVICE_ID_MDEC                                      0x0002
++#define PCI_DEVICE_ID_MBCNT                                     0x0021
++
++enum fpga_register_map
++{
++    // CPLD VERSION
++    CPLD_VERSION        = 0x00000000, 
++    // MDIO Read Address
++    BMD_BUS_MDIO_SUB_RD_ADD = 0x00700140,
++    BMD_BUS_MDIO_RD_PDT = 0x00700144,  // MDIO bus bridge Read Address_Data
++    BMD_BUS_MDIO_RD_ADD = 0x00700144,
++    // MDIO Read Data 
++    BMD_BUS_MDIO_RD_DT  = 0x00700148,
++    // MDIO Write Address
++    BMD_BUS_MDIO_WT_PDT = 0x007001D4,  // MDIO BUS bridge write adress data
++    BMD_BUS_MDIO_WT_ADD = 0x007001D4,
++    BMD_BUS_MDIO_SUB_WT_ADD = 0x007001D0,
++    // MDIO Write Data
++    BMD_BUS_MDIO_WT_DT  = 0x007001D8,
++    // MDIO Command
++    BMD_BUS_ACC_CMD     = 0x00700134,
++    // MDIO Busy
++    BMD_BUS_BUSY        = 0x00700130,
++    // MDIO Error
++    BMD_AC_BUS_TAERR    = 0x00700120,
++    // MDEC HW Pin
++    HW_VCC              = 0x00000228,
++    HW_ModSelL          = 0x00A00024,
++    HW_LPMODE           = 0x00A00020,
++    HW_RESETL           = 0x00A00008,
++    HW_MODPRSL          = 0x00A00030,
++    HW_INTL             = 0x00A00010,
++    // MEDC I2C
++    I2C_WRITE_ADD       = 0x00A001D0,
++    I2C_WRITE_DT        = 0x00A001D4,
++    I2C_READ_ADD        = 0x00A00140,
++    I2C_READ_DT         = 0x00A00144,
++    I2C_ACC_CMD         = 0x00A00134,
++    I2C_BUSY            = 0x00A00130,
++    I2C_IRQ_ERR_HL      = 0x00A00120,
++    // MDEC
++    MDEC_EEPROM_ADD     = 0x00F00000,
++};
++
++enum fpga_chips {
++    FJ_MDEC,
++    FJ_MBCNT,
++    FJ_CDEC,
++};
++
++enum fpga_sysfs_attributes
++{
++    CPLD_VERSION_ATTR, DCO_MDIO_OFFSET_ATTR, DCO_MDIO_ATTR, MDEC_OFFSET_ATTR, MDEC_ATTR, MDEC_EEPROM_ATTR, TEMP1_INPUT, TEMP2_INPUT, QSFP_OFFSET_ATTR, QSFP_ATTR,
++    PORT1_EEPROM_0, PORT1_EEPROM_1, PORT1_EEPROM_2, PORT1_EEPROM_3, PORT1_EEPROM_17, PORT2_EEPROM_0, PORT2_EEPROM_1, PORT2_EEPROM_2, PORT2_EEPROM_3, PORT2_EEPROM_17,
++    PORT3_EEPROM_0, PORT3_EEPROM_1, PORT3_EEPROM_2, PORT3_EEPROM_3, PORT3_EEPROM_17, PORT4_EEPROM_0, PORT4_EEPROM_1, PORT4_EEPROM_2, PORT4_EEPROM_3, PORT4_EEPROM_17,
++    PORT5_EEPROM_0, PORT5_EEPROM_1, PORT5_EEPROM_2, PORT5_EEPROM_3, PORT5_EEPROM_17, PORT6_EEPROM_0, PORT6_EEPROM_1, PORT6_EEPROM_2, PORT6_EEPROM_3, PORT6_EEPROM_17,
++    PORT7_EEPROM_0, PORT7_EEPROM_1, PORT7_EEPROM_2, PORT7_EEPROM_3, PORT7_EEPROM_17, PORT8_EEPROM_0, PORT8_EEPROM_1, PORT8_EEPROM_2, PORT8_EEPROM_3, PORT8_EEPROM_17,
++    PORT9_EEPROM_0, PORT9_EEPROM_1, PORT9_EEPROM_2, PORT9_EEPROM_3, PORT9_EEPROM_17, PORT10_EEPROM_0, PORT10_EEPROM_1, PORT10_EEPROM_2, PORT10_EEPROM_3, PORT10_EEPROM_17,
++    PORT11_EEPROM_0, PORT11_EEPROM_1, PORT11_EEPROM_2, PORT11_EEPROM_3, PORT11_EEPROM_17, PORT12_EEPROM_0, PORT12_EEPROM_1, PORT12_EEPROM_2, PORT12_EEPROM_3, PORT12_EEPROM_17,
++    PIU1_DCO_MDIO_LOCK, PIU2_DCO_MDIO_LOCK, PIU1_QSFP_LOCK, PIU2_QSFP_LOCK, MDEC_LOCK, PIU_RESCAN_LOCK,
++};
++
++struct fpga_device
++{
++    char __iomem* hw_addr;
++
++    struct mutex app_lock;
++    struct mutex app_piu1_qsfp_lock;
++    struct mutex app_piu2_qsfp_lock;
++    struct mutex app_piu1_dco_mdio_lock;
++    struct mutex app_piu2_dco_mdio_lock;
++    struct mutex app_piu_rescan;
++    struct device dev;
++
++    /* for read data */
++    u32 mdec_read_result_data;
++    u16 mdio_read_result_data;
++    u8 qsfp_read_result_data;
++
++    u8 is_enable;
++};
++
++static struct mutex io_lock;
++
++static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos, u8 value);
++static void read_port_eeprom_data(struct fpga_device* fpga_dev, u8 port, u8 *buffer);
++static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos);
++
++static ssize_t de_new_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count);
++static ssize_t de_del_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count);
++
++/* =================== local subprogram bodies =================== */
++static u32 t600_fj_mdec_read32(void *addr)
++{
++    u32 value;
++
++    mutex_lock(&io_lock);
++    value = ioread32(addr);
++    mutex_unlock(&io_lock);
++
++    return le32_to_cpu(value);
++}
++
++static void t600_fj_mdec_write32(u32 value, void *addr)
++{
++    u32 data = cpu_to_le32(value);
++
++    mutex_lock(&io_lock);
++    iowrite32(data, addr);
++
++    /* According to FJ's suggestion, we change the code from isync() to asm volatile() for memory barrier in PowerPC.
++     */
++    asm volatile("mbar 0" : : : "memory");
++    asm volatile("msync" : : : "memory");
++    asm volatile("isync" : : : "memory");
++    mutex_unlock(&io_lock);
++}
++
++/* =================== The Sysfs Interface Area [START] =================== */
++static ssize_t cpld_version_show(struct device* dev, struct device_attribute* attr, char* buf)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    u32 value = 0x00000000;
++
++    value = t600_fj_mdec_read32(fpga_dev->hw_addr + CPLD_VERSION);
++
++    return sprintf(buf, "0x%08X\n", value);
++}
++
++static ssize_t mdio_read_result(struct device* dev, struct device_attribute* attr, char* buf)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    
++    return sprintf(buf, "0x%04X\n", fpga_dev->mdio_read_result_data);
++} 
++
++static ssize_t mdec_read_result(struct device* dev, struct device_attribute* attr, char* buf)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    
++    return sprintf(buf, "0x%08X\n", fpga_dev->mdec_read_result_data);
++}
++
++static ssize_t read_mdec_eeprom(struct device* dev, struct device_attribute* attr, char* buf)
++{
++    u32 value;
++    char __iomem* mem_addr;
++    u8 eerpom_buf[MDEC_EEPROM_SIZE];
++    int i = 0;
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++
++    mem_addr = fpga_dev->hw_addr + MDEC_EEPROM_ADDR;
++
++    for(i = 0; i < MDEC_EEPROM_SIZE; i+=4)
++    {
++        value = t600_fj_mdec_read32(mem_addr + i);
++        eerpom_buf[i + 0] = value >> 24;
++        eerpom_buf[i + 1] = value >> 16;
++        eerpom_buf[i + 2] = value >> 8;
++        eerpom_buf[i + 3] = value >> 0;
++    }
++
++    memcpy(buf, eerpom_buf, MDEC_EEPROM_SIZE);
++    return MDEC_EEPROM_SIZE;
++}
++
++static ssize_t qsfp_read_result(struct device* dev, struct device_attribute* attr, char* buf)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    
++    return sprintf(buf, "0x%02X\n", fpga_dev->qsfp_read_result_data);
++} 
++
++/* Refer to sheet "21.Driver Control" of "T600_DHAL Specification_v1.6.xlsx" */
++static u32 mdio_access(struct device* dev, u32 mode, u32 page, u32 address, u32 data)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    u32 status;
++    int i = 0;
++
++    // Check MDIO busy status
++    for(i = 0; i < MDIO_STATUS_CHK_RETRY_COUNT ; i++)
++    {
++        status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_BUS_BUSY); // read MDIO busy status
++        if(status == MDIO_STATUS_BUSY){
++            usleep_range(10, 20);
++        }
++        else{
++            break;
++        }
++    }
++        
++    // write
++    if(mode == MDIO_WRITE_MODE)
++    {
++        if (page <= 0x000B)
++        {   
++            t600_fj_mdec_write32(((0x0 << 8) | (0x1)), fpga_dev->hw_addr + BMD_BUS_MDIO_SUB_WT_ADD);     // SUB_1 & SUB_2
++            t600_fj_mdec_write32(((page << 16) | (address)), fpga_dev->hw_addr +  BMD_BUS_MDIO_WT_ADD); // set page & address
++            t600_fj_mdec_write32(data, fpga_dev->hw_addr + BMD_BUS_MDIO_WT_DT);      // set write data
++            t600_fj_mdec_write32(MDIO_WRITE_CMD1, fpga_dev->hw_addr + BMD_BUS_ACC_CMD); // set write command
++        }
++        else if(page == 0xFFFF)
++        {
++            t600_fj_mdec_write32(((0x0 << 8) | (0x1)), fpga_dev->hw_addr + BMD_BUS_MDIO_SUB_WT_ADD);     // SUB_1 & SUB_2
++            t600_fj_mdec_write32(((0xFFFF << 16) | (address)), fpga_dev->hw_addr +  BMD_BUS_MDIO_WT_ADD); // set page & address
++            t600_fj_mdec_write32(data, fpga_dev->hw_addr + BMD_BUS_MDIO_WT_DT);      // set write data
++            t600_fj_mdec_write32(MDIO_WRITE_CMD2, fpga_dev->hw_addr + BMD_BUS_ACC_CMD); // set write command
++        }
++        else
++        {
++            return  - EINVAL;   
++        }    
++    }
++    else
++    {
++        
++MDIO_READ_BEGIN:
++    
++        if (page <= 0x000B)
++        {   
++            t600_fj_mdec_write32(((0x0 << 8) | (0x1)), fpga_dev->hw_addr + BMD_BUS_MDIO_SUB_RD_ADD);     // SUB_1 & SUB_2
++            t600_fj_mdec_write32(((page << 16) | (address)), fpga_dev->hw_addr +  BMD_BUS_MDIO_RD_ADD); // set address
++            t600_fj_mdec_write32(MDIO_READ_CMD1, fpga_dev->hw_addr + BMD_BUS_ACC_CMD); // set read command
++        }
++        else if(page == 0xFFFF)
++        {
++            t600_fj_mdec_write32(((0x0 << 8) | (0x1)), fpga_dev->hw_addr + BMD_BUS_MDIO_SUB_RD_ADD);     // SUB_1 & SUB_2
++            t600_fj_mdec_write32(((0xFFFF << 16) | (address)), fpga_dev->hw_addr +  BMD_BUS_MDIO_RD_ADD); // set address
++            t600_fj_mdec_write32(MDIO_READ_CMD2, fpga_dev->hw_addr + BMD_BUS_ACC_CMD); // set read command
++        }
++        else
++        {
++            return  - EINVAL;   
++        }
++        
++        // Check MDIO busy status
++        for(i = 0; i < MDIO_STATUS_CHK_RETRY_COUNT ; i++)
++        {
++            status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_BUS_BUSY); // read MDIO busy status
++            if(status == MDIO_STATUS_BUSY){
++                usleep_range(10, 20);
++            }
++            else{
++                break;
++            }
++        }
++        
++        // Bus Error Check    
++        for(i = 0; i < MDIO_BUS_CHK_RETRY_COUNT ; i++)
++        {
++              // Check bus error bit
++            status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_AC_BUS_TAERR);
++            status &= 0x0001;
++              
++            if(status == MDIO_BUS_CHK_OK)
++            {
++                  // NOT BUSY
++                  break;
++            }
++            if(i == MDIO_BUS_CHK_RETRY_COUNT -1)
++            {
++                goto MDIO_READ_BEGIN;   
++            }
++#if 0
++            printk(KERN_DEBUG "[DEBUG] I2C bus busy, 1retry count =%d\r\n", i);
++#endif
++        }   
++        // Read data
++        status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_BUS_MDIO_RD_DT);
++    }
++
++    return status;
++}
++
++static ssize_t mdio_action_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    u32 mode, page, address, data, status;
++
++    if(sscanf(buf, "0x%x 0x%x 0x%x 0x%x",&mode, &page, &address, &data) != 4)
++    {
++        return  - EINVAL;
++    }
++
++    if(mode > MDIO_WRITE_MODE)
++    {
++        printk(KERN_WARNING "[ERR] mode ERR, mode range is 0X0000 ~0x0001 \r\n");
++        return  - EINVAL;
++    }
++
++    status = mdio_access(dev, mode, page, address, data);
++    if((mode == MDIO_READ_MODE) && (status >= 0))
++    {
++        fpga_dev->mdio_read_result_data = status;
++    }
++
++    return count;
++}
++
++static ssize_t mdec_action_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    u32 mode, address, data;
++    struct fpga_device* fpga_dev = NULL;
++
++    fpga_dev = dev_get_drvdata(dev);
++
++    if(sscanf(buf, "0x%x 0x%x 0x%x",&mode, &address, &data) != 3)
++    {
++        return  - EINVAL;
++    } 
++
++    if(mode > MDIO_WRITE_MODE)
++    {
++        printk(KERN_WARNING "[ERR] mode ERR, mode range is 0X00000000 ~0x00000001 \r\n");
++        return  - EINVAL;
++    }
++
++    // write
++    if(mode == MDEC_WRITE_MODE)
++    {
++        t600_fj_mdec_write32(data, fpga_dev->hw_addr + address);
++    }
++    else
++    {
++        /* Read data */
++        fpga_dev->mdec_read_result_data = t600_fj_mdec_read32(fpga_dev->hw_addr + address);
++    }
++
++    return count;
++}
++
++static ssize_t qsfp_action_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    u32 mode, port, address, data;
++    struct fpga_device* fpga_dev = NULL;
++        
++    fpga_dev = dev_get_drvdata(dev);
++
++    if(sscanf(buf, "0x%x 0x%x 0x%x 0x%x",&mode, &port, &address, &data) != 4)
++    {
++        return  - EINVAL;
++    } 
++
++    if(mode > I2C_WRITE_MODE)
++    {
++        printk(KERN_WARNING "[ERR] mode ERR, mode range is 0X00000000 ~0x00000001 \r\n");
++        return  - EINVAL;
++    }
++    
++    port = port - 1; // application port are 1~12. kernel port are 0~11.
++
++    if(mode == I2C_WRITE_MODE)
++    {
++        write_port_eeprom_one_byte(fpga_dev, port, address, data);
++    }
++    else
++    {
++        fpga_dev->qsfp_read_result_data = read_port_eeprom_one_byte(fpga_dev, port, address);
++#if 0
++        printk(KERN_DEBUG "[DEBUG] READ - I2C_READ_DT = %02x\n", qsfp_read_result_data);
++#endif
++    }
++
++    return count;
++}
++
++static ssize_t app_lock_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    u32 is_locked;
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    struct sensor_device_attribute* dev_attr = to_sensor_dev_attr(attr);
++
++    if(sscanf(buf, "%d", &is_locked) != 1)
++    {
++        return  - EINVAL;
++    }
++
++    if((is_locked < 0) || (is_locked > 1))
++    {
++        return  - EINVAL;
++    }
++
++    switch(dev_attr->index)
++    {
++        case MDEC_LOCK:
++            if(is_locked)
++            {
++                mutex_lock(&fpga_dev->app_lock);
++            }
++            else
++            {
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_lock))
++                {
++                    mutex_unlock(&fpga_dev->app_lock);
++                }
++            }
++            break;
++        case PIU_RESCAN_LOCK:
++            if(is_locked)
++            {
++                mutex_lock(&fpga_dev->app_piu_rescan);
++            }
++            else
++            {
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_piu_rescan))
++                {
++                    mutex_unlock(&fpga_dev->app_piu_rescan);
++                }
++            }
++            break;
++        default:
++            printk (KERN_ERR "lock/unlock fail. \r\n");
++            break;
++    }
++
++    return count;
++}
++
++static ssize_t app_qsfp_lock_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    struct sensor_device_attribute* dev_attr = to_sensor_dev_attr(attr);
++    u32 is_locked;
++
++    if(sscanf(buf, "%d", &is_locked) != 1)
++    {
++        return  - EINVAL;
++    }
++
++    if((is_locked < 0) || (is_locked > 1))
++    {
++        return  - EINVAL;
++    }
++
++    switch(dev_attr->index)
++    {
++
++        case PIU1_QSFP_LOCK:
++            if(is_locked)
++            {
++                mutex_lock(&fpga_dev->app_piu1_qsfp_lock);
++            }
++            else
++            {
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_piu1_qsfp_lock))
++                {
++                    mutex_unlock(&fpga_dev->app_piu1_qsfp_lock);
++                }
++            }
++            break;
++
++        case PIU2_QSFP_LOCK:
++            if(is_locked)
++            {
++                mutex_lock(&fpga_dev->app_piu2_qsfp_lock);
++            }
++            else
++            {
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_piu2_qsfp_lock))
++                {
++                    mutex_unlock(&fpga_dev->app_piu2_qsfp_lock);
++                }
++            }
++            break;
++        default:
++            printk (KERN_ERR "QSFP lock/unlock fail. \r\n");
++            break;
++    }
++
++    return count;
++}
++
++static ssize_t app_dco_mdio_lock_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    struct sensor_device_attribute* dev_attr = to_sensor_dev_attr(attr);
++    u32 is_locked;
++
++    if(sscanf(buf, "%d", &is_locked) != 1)
++    {
++        return  -EINVAL;
++    }
++
++    if((is_locked < 0) || (is_locked > 1))
++    {
++        return  -EINVAL;
++    }
++
++    switch(dev_attr->index)
++    {
++
++        case PIU1_DCO_MDIO_LOCK:
++            if(is_locked)
++            {
++                mutex_lock(&fpga_dev->app_piu1_dco_mdio_lock);
++            }
++            else
++            {
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_piu1_dco_mdio_lock))
++                {
++                    mutex_unlock(&fpga_dev->app_piu1_dco_mdio_lock);
++                }
++            }
++            break;
++
++        case PIU2_DCO_MDIO_LOCK:
++            if(is_locked)
++            {
++                mutex_lock(&fpga_dev->app_piu2_dco_mdio_lock);
++            }
++            else
++            {
++                /* The lock is not work if user unlock before lock, so we ignore command if it is not locked.*/
++                if(1 == mutex_is_locked(&fpga_dev->app_piu2_dco_mdio_lock))
++                {
++                    mutex_unlock(&fpga_dev->app_piu2_dco_mdio_lock);
++                }
++            }
++            break;
++        default:
++            printk (KERN_ERR "DCO MDIO lock/unlock fail. \r\n");
++            break;
++    }
++
++    return count;
++}
++
++static ssize_t temp_show(struct device* dev, struct device_attribute* attr, char* buf)
++{
++    struct sensor_device_attribute* dev_attr = to_sensor_dev_attr(attr);
++    u32 value;
++
++    /* Refer to appendix_DCO_MDIO_IO_MAP(Preliminary).xlsx */
++    value = mdio_access(dev, MDIO_READ_MODE, (dev_attr->index - TEMP1_INPUT), 0xee76, 0x0);
++    if(value <= 0)
++    {
++        /* 1 degree Celsius as default */
++        value = 1;
++    }
++
++    return sprintf(buf, "%d\n", value*1000);
++}
++static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* attr, char* buf)
++{
++    struct sensor_device_attribute* dev_attr = to_sensor_dev_attr(attr);
++    u8 eerpom_buf[QSFP_EEPROM_SIZE];
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    
++    memset(eerpom_buf, 0x00, QSFP_EEPROM_SIZE);
++
++    switch(dev_attr->index)
++    {
++
++        case PORT1_EEPROM_0:     // port1, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT1_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT1_HEX, eerpom_buf);
++             break;
++        case PORT1_EEPROM_1:     // port1, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT1_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT1_HEX, eerpom_buf);
++             break;
++        case PORT1_EEPROM_2:     // port1, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT1_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT1_HEX, eerpom_buf);
++             break;
++        case PORT1_EEPROM_3:     // port1, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT1_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT1_HEX, eerpom_buf);
++             break;
++        case PORT1_EEPROM_17:     // port1, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT1_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT1_HEX, eerpom_buf);
++             break;
++        case PORT2_EEPROM_0:     // port2, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT2_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT2_HEX, eerpom_buf);
++             break;
++        case PORT2_EEPROM_1:     // port2, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT2_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT2_HEX, eerpom_buf);
++             break;
++        case PORT2_EEPROM_2:     // port2, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT2_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT2_HEX, eerpom_buf);
++             break;
++        case PORT2_EEPROM_3:     // port2, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT2_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT2_HEX, eerpom_buf);
++             break;
++        case PORT2_EEPROM_17:     // port2, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT2_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT2_HEX, eerpom_buf);
++             break;
++        case PORT3_EEPROM_0:     // port3, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT3_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT3_HEX, eerpom_buf);
++             break;
++        case PORT3_EEPROM_1:     // port3, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT3_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT3_HEX, eerpom_buf);
++             break;
++        case PORT3_EEPROM_2:     // port3, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT3_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT3_HEX, eerpom_buf);
++             break;
++        case PORT3_EEPROM_3:     // port3, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT3_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT3_HEX, eerpom_buf);
++             break;
++        case PORT3_EEPROM_17:     // port3, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT3_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT3_HEX, eerpom_buf);
++             break;
++        case PORT4_EEPROM_0:     // port4, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT4_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT4_HEX, eerpom_buf);
++             break;
++        case PORT4_EEPROM_1:     // port4, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT4_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT4_HEX, eerpom_buf);
++             break;
++        case PORT4_EEPROM_2:     // port4, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT4_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT4_HEX, eerpom_buf);
++             break;
++        case PORT4_EEPROM_3:     // port4, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT4_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT4_HEX, eerpom_buf);
++             break;
++        case PORT4_EEPROM_17:     // port4, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT4_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT4_HEX, eerpom_buf);
++             break;
++        case PORT5_EEPROM_0:     // port5, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT5_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT5_HEX, eerpom_buf);
++             break;
++        case PORT5_EEPROM_1:     // port5, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT5_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT5_HEX, eerpom_buf);
++             break;
++        case PORT5_EEPROM_2:     // port5, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT5_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT5_HEX, eerpom_buf);
++             break;
++        case PORT5_EEPROM_3:     // port5, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT5_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT5_HEX, eerpom_buf);
++             break;
++        case PORT5_EEPROM_17:     // port5, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT5_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT5_HEX, eerpom_buf);
++             break;
++        case PORT6_EEPROM_0:     // port6, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT6_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT6_HEX, eerpom_buf);
++             break;
++        case PORT6_EEPROM_1:     // port6, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT6_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT6_HEX, eerpom_buf);
++             break;
++        case PORT6_EEPROM_2:     // port6, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT6_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT6_HEX, eerpom_buf);
++             break;
++        case PORT6_EEPROM_3:     // port6, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT6_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT6_HEX, eerpom_buf);
++             break;
++        case PORT6_EEPROM_17:     // port6, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT6_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT6_HEX, eerpom_buf);
++             break;
++        case PORT7_EEPROM_0:     // port7, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT7_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT7_HEX, eerpom_buf);
++             break;
++        case PORT7_EEPROM_1:     // port7, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT7_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT7_HEX, eerpom_buf);
++             break;
++        case PORT7_EEPROM_2:     // port7, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT7_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT7_HEX, eerpom_buf);
++             break;
++        case PORT7_EEPROM_3:     // port7, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT7_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT7_HEX, eerpom_buf);
++             break;
++        case PORT7_EEPROM_17:     // port7, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT7_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT7_HEX, eerpom_buf);
++             break;
++        case PORT8_EEPROM_0:     // port8, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT8_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT8_HEX, eerpom_buf);
++             break;
++        case PORT8_EEPROM_1:     // port8, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT8_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT8_HEX, eerpom_buf);
++             break;
++        case PORT8_EEPROM_2:     // port8, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT8_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT8_HEX, eerpom_buf);
++             break;
++        case PORT8_EEPROM_3:     // port8, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT8_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT8_HEX, eerpom_buf);
++             break;
++        case PORT8_EEPROM_17:     // port8, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT8_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT8_HEX, eerpom_buf);
++             break;
++        case PORT9_EEPROM_0:     // port9, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT9_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT9_HEX, eerpom_buf);
++             break;
++        case PORT9_EEPROM_1:     // port9, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT9_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT9_HEX, eerpom_buf);
++             break;
++        case PORT9_EEPROM_2:     // port9, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT9_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT9_HEX, eerpom_buf);
++             break;
++        case PORT9_EEPROM_3:     // port9, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT9_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT9_HEX, eerpom_buf);
++             break;
++        case PORT9_EEPROM_17:     // port9, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT9_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT9_HEX, eerpom_buf);
++             break;
++        case PORT10_EEPROM_0:     // port10, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT10_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT10_HEX, eerpom_buf);
++             break;
++        case PORT10_EEPROM_1:     // port10, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT10_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT10_HEX, eerpom_buf);
++             break;
++        case PORT10_EEPROM_2:     // port10, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT10_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT10_HEX, eerpom_buf);
++             break;
++        case PORT10_EEPROM_3:     // port10, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT10_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT10_HEX, eerpom_buf);
++             break;
++        case PORT10_EEPROM_17:     // port10, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT10_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT10_HEX, eerpom_buf);
++             break;
++        case PORT11_EEPROM_0:     // port11, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT11_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT11_HEX, eerpom_buf);
++             break;
++        case PORT11_EEPROM_1:     // port11, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT11_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT11_HEX, eerpom_buf);
++             break;
++        case PORT11_EEPROM_2:     // port11, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT11_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT11_HEX, eerpom_buf);
++             break;
++        case PORT11_EEPROM_3:     // port11, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT11_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT11_HEX, eerpom_buf);
++             break;
++        case PORT11_EEPROM_17:     // port11, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT11_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT11_HEX, eerpom_buf);
++             break;
++        case PORT12_EEPROM_0:     // port12, page0
++             write_port_eeprom_one_byte(fpga_dev, PORT12_HEX, POS_127_HEX, 0x00);
++             read_port_eeprom_data(fpga_dev, PORT12_HEX, eerpom_buf);
++             break;
++        case PORT12_EEPROM_1:     // port12, page1
++             write_port_eeprom_one_byte(fpga_dev, PORT12_HEX, POS_127_HEX, 0x01);
++             read_port_eeprom_data(fpga_dev, PORT12_HEX, eerpom_buf);
++             break;
++        case PORT12_EEPROM_2:     // port12, page2
++             write_port_eeprom_one_byte(fpga_dev, PORT12_HEX, POS_127_HEX, 0x02);
++             read_port_eeprom_data(fpga_dev, PORT12_HEX, eerpom_buf);
++             break;
++        case PORT12_EEPROM_3:     // port12, page3
++             write_port_eeprom_one_byte(fpga_dev, PORT12_HEX, POS_127_HEX, 0x03);
++             read_port_eeprom_data(fpga_dev, PORT12_HEX, eerpom_buf);
++             break;
++        case PORT12_EEPROM_17:     // port12, page17(11h)
++             write_port_eeprom_one_byte(fpga_dev, PORT12_HEX, POS_127_HEX, 0x11);
++             read_port_eeprom_data(fpga_dev, PORT12_HEX, eerpom_buf);
++             break;
++        default:
++             printk(KERN_ERR "[ERR] Unknow index: %d \r\n", dev_attr->index);
++             break;
++    }
++
++    memcpy(buf, eerpom_buf, QSFP_EEPROM_SIZE);
++    return QSFP_EEPROM_SIZE;
++}
++
++/* refer to sheet "QSFP28_Driver" of "03_05_QSFP28_Driver_Specification_v0.4.xlsx" */
++static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos, u8 value)
++{
++    u32 set_add, set_dt, status;
++    int i;
++
++    /* Port number is inversed by mdec. Port1=CL12 */
++    port = 11 - port;
++    for(i = 0; i < I2C_CHK_BUS_BUSY_RETRY_COUNT ; i++)
++    {
++        status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_BUSY + (port << 16)); //0x00An0130, n means port
++        if(status == 0)
++        {
++              break;
++        }
++
++        usleep_range(200, 400);
++        if(i == (I2C_CHK_BUS_BUSY_RETRY_COUNT -1))
++        {
++            printk(KERN_ERR "I2C bus is busy, retry 200 timeout \r\n");
++        }
++#if 0
++        else
++        {
++            printk(KERN_DEBUG "[DEBUG] I2C bus is busy, retry count =%d\r\n", i + 1);
++        }
++#endif
++    }
++
++    for(i = 0; i < I2C_READ_STATUS_RETRY_COUNT ; i++)
++    {
++        // Set address
++        set_add =  (0xA0000005 | (pos << 16));   //0xA0XX0005, XX mean input address 
++        t600_fj_mdec_write32(set_add, fpga_dev->hw_addr + I2C_WRITE_ADD + (port << 16)); //0x00An01D0, n means port
++        set_dt =  (0x00000000 | value);          // 0x000000XX, XX mean input data 
++        t600_fj_mdec_write32(set_dt, fpga_dev->hw_addr + I2C_WRITE_DT + (port << 16)); //
++        // Write Trigger
++        t600_fj_mdec_write32(I2C_ACC_CMD_WRITE, fpga_dev->hw_addr + I2C_ACC_CMD + (port << 16)); //0x00An0134, n means port
++        status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_IRQ_ERR_HL + (port << 12));
++        if(status == 0)
++        {
++            // NO Error
++            break;  
++        }
++
++        if(i == (I2C_READ_STATUS_RETRY_COUNT -1))
++        {
++            printk(KERN_ERR "check - I2C_IRQ_ERR_HL status is err, retry 3 timeout \r\n");
++        }
++#if 0
++        else
++        {
++            printk(KERN_DEBUG "[DEBUG] check - I2C_IRQ_ERR_HL status is err, retry count =%d\r\n", i+1);
++        }
++#endif
++    }
++}
++
++static void read_port_eeprom_data(struct fpga_device* fpga_dev, u8 port, u8 *buffer)
++{
++    u8 eeprom_pos;
++    int i = 0;
++    
++    eeprom_pos = 0x00;
++    
++    for(i = 0 ; i < 256 ; i++)
++    {
++        buffer[i] = read_port_eeprom_one_byte(fpga_dev, port, eeprom_pos);
++        eeprom_pos += 0x01;
++    }
++}
++
++static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos)
++{
++    u32 set_add, status;
++    u8 value;
++    int i, j;
++
++    /* Port number is inversed by mdec. Port1=CL12 */
++    port = 11 - port;
++    for(i = 0; i < I2C_CHK_BUS_BUSY_RETRY_COUNT ; i++)
++    {
++        status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_BUSY + (port << 16)); //0x00An0130, n means port
++        if(status == 0)
++        {
++            // NOT BUSY
++            break;
++        }
++        usleep_range(200, 400);
++#if 0
++        printk(KERN_DEBUG "[DEBUG] I2C bus busy, 2retry count =%d\r\n", i + 1);
++#endif
++    }
++        
++    for(i = 0; i < I2C_READ_STATUS_RETRY_COUNT ; i++)
++    {
++        // Set address
++        set_add =  (0xA0000005 | (pos << 16));   //0xA0XX0005, XX mean input address 
++        t600_fj_mdec_write32(set_add, fpga_dev->hw_addr + I2C_READ_ADD + (port << 16)); //0x00An0140, n means port
++        // Write Trigger
++        t600_fj_mdec_write32(I2C_ACC_CMD_READ, fpga_dev->hw_addr + I2C_ACC_CMD + (port << 16)); //0x00An0134, n means port
++            
++        for(j = 0; j < I2C_CHK_BUS_BUSY_RETRY_COUNT ; j++)
++        {
++            usleep_range(200, 400);
++            status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_BUSY + (port << 16)); //0x00An0130, n means port
++            if(status == 0)
++            {
++                // NOT BUSY
++                break;
++            }
++#if 0
++            printk(KERN_DEBUG "[DEBUG] I2C bus busy, 3retry count =%d\r\n", j);
++#endif
++        }
++
++        status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_IRQ_ERR_HL + (port << 16)); //0x00An0120, n means port
++        if(status == 0)
++        {
++            break;  
++        }
++#if 0
++        printk(KERN_DEBUG "[DEBUG] check - I2C_IRQ_ERR_HL status = %08x(Err), count = %d\n", status, i+1);
++#endif
++    }
++    
++    value = (u8)t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_READ_DT + (port << 16)); //0x00An0144, n means port
++
++    return value;   
++}
++
++/* root attribute */
++static SENSOR_DEVICE_ATTR(new_device, S_IWUSR, NULL, de_new_store, 0);
++static SENSOR_DEVICE_ATTR(delete_device, S_IWUSR, NULL, de_del_store, 0);
++
++/* fpga attribute */
++static SENSOR_DEVICE_ATTR(cpld_version, S_IRUGO, cpld_version_show, NULL, CPLD_VERSION_ATTR);
++static SENSOR_DEVICE_ATTR(dco_mdio_offset, S_IWUSR, NULL, mdio_action_store, DCO_MDIO_OFFSET_ATTR);
++static SENSOR_DEVICE_ATTR(dco_mdio, S_IRUGO, mdio_read_result, NULL, DCO_MDIO_ATTR);
++static SENSOR_DEVICE_ATTR(temp1_input, S_IRUGO, temp_show, NULL, TEMP1_INPUT);
++static SENSOR_DEVICE_ATTR(temp2_input, S_IRUGO, temp_show, NULL, TEMP2_INPUT);
++static SENSOR_DEVICE_ATTR(mdec_offset, S_IWUSR, NULL, mdec_action_store, MDEC_OFFSET_ATTR);
++static SENSOR_DEVICE_ATTR(mdec, S_IRUGO, mdec_read_result, NULL, MDEC_ATTR);
++static SENSOR_DEVICE_ATTR(mdec_eeprom, S_IRUGO, read_mdec_eeprom, NULL, MDEC_EEPROM_ATTR);
++static SENSOR_DEVICE_ATTR(qsfp_offset, S_IWUSR, NULL, qsfp_action_store, QSFP_OFFSET_ATTR);
++static SENSOR_DEVICE_ATTR(qsfp, S_IRUGO, qsfp_read_result, NULL, QSFP_ATTR);
++static SENSOR_DEVICE_ATTR(app_locked, S_IWUSR, NULL, app_lock_store, MDEC_LOCK);
++static SENSOR_DEVICE_ATTR(app_piu1_dco_mdio_locked, S_IWUSR, NULL, app_dco_mdio_lock_store, PIU1_DCO_MDIO_LOCK);
++static SENSOR_DEVICE_ATTR(app_piu2_dco_mdio_locked, S_IWUSR, NULL, app_dco_mdio_lock_store, PIU2_DCO_MDIO_LOCK);
++static SENSOR_DEVICE_ATTR(app_piu1_qsfp_locked, S_IWUSR, NULL, app_qsfp_lock_store, PIU1_QSFP_LOCK);
++static SENSOR_DEVICE_ATTR(app_piu2_qsfp_locked, S_IWUSR, NULL, app_qsfp_lock_store, PIU2_QSFP_LOCK);
++static SENSOR_DEVICE_ATTR(app_rescan_locked, S_IWUSR, NULL, app_lock_store, PIU_RESCAN_LOCK);
++
++#define DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port1_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT1_EEPROM_##index);
++#define DECLARE_PORT1_EEPROM_ATTR(index) &sensor_dev_attr_port1_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port2_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT2_EEPROM_##index);
++#define DECLARE_PORT2_EEPROM_ATTR(index) &sensor_dev_attr_port2_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port3_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT3_EEPROM_##index);
++#define DECLARE_PORT3_EEPROM_ATTR(index) &sensor_dev_attr_port3_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port4_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT4_EEPROM_##index);
++#define DECLARE_PORT4_EEPROM_ATTR(index) &sensor_dev_attr_port4_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port5_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT5_EEPROM_##index);
++#define DECLARE_PORT5_EEPROM_ATTR(index) &sensor_dev_attr_port5_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port6_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT6_EEPROM_##index);
++#define DECLARE_PORT6_EEPROM_ATTR(index) &sensor_dev_attr_port6_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port7_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT7_EEPROM_##index);
++#define DECLARE_PORT7_EEPROM_ATTR(index) &sensor_dev_attr_port7_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port8_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT8_EEPROM_##index);
++#define DECLARE_PORT8_EEPROM_ATTR(index) &sensor_dev_attr_port8_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port9_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT9_EEPROM_##index);
++#define DECLARE_PORT9_EEPROM_ATTR(index) &sensor_dev_attr_port9_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port10_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT10_EEPROM_##index);
++#define DECLARE_PORT10_EEPROM_ATTR(index) &sensor_dev_attr_port10_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port11_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT11_EEPROM_##index);
++#define DECLARE_PORT11_EEPROM_ATTR(index) &sensor_dev_attr_port11_eeprom_##index.dev_attr.attr
++#define DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(index) \
++static SENSOR_DEVICE_ATTR(port12_eeprom_##index, S_IRUGO, read_port_eeprom, NULL, PORT12_EEPROM_##index);
++#define DECLARE_PORT12_EEPROM_ATTR(index) &sensor_dev_attr_port12_eeprom_##index.dev_attr.attr
++
++DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT1_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT2_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT3_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT4_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT5_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT6_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT7_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT8_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT9_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT10_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT11_EEPROM_SENSOR_DEV_ATTR(17);
++DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(0);
++DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(1);
++DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(2);
++DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(3);
++DECLARE_PORT12_EEPROM_SENSOR_DEV_ATTR(17);
++
++static struct attribute* root_attributes[] =
++{
++    &sensor_dev_attr_new_device.dev_attr.attr,
++    &sensor_dev_attr_delete_device.dev_attr.attr,
++    NULL,
++};
++
++static struct attribute* sysfs_attributes[] = 
++{
++    &sensor_dev_attr_cpld_version.dev_attr.attr, &sensor_dev_attr_dco_mdio_offset.dev_attr.attr, &sensor_dev_attr_dco_mdio.dev_attr.attr, &sensor_dev_attr_mdec_offset.dev_attr.attr, &sensor_dev_attr_mdec.dev_attr.attr, &sensor_dev_attr_mdec_eeprom.dev_attr.attr, &sensor_dev_attr_temp1_input.dev_attr.attr, &sensor_dev_attr_temp2_input.dev_attr.attr,
++    &sensor_dev_attr_qsfp_offset.dev_attr.attr, &sensor_dev_attr_qsfp.dev_attr.attr,
++    DECLARE_PORT1_EEPROM_ATTR(0), DECLARE_PORT1_EEPROM_ATTR(1), DECLARE_PORT1_EEPROM_ATTR(2), DECLARE_PORT1_EEPROM_ATTR(3), DECLARE_PORT1_EEPROM_ATTR(17),
++    DECLARE_PORT2_EEPROM_ATTR(0), DECLARE_PORT2_EEPROM_ATTR(1), DECLARE_PORT2_EEPROM_ATTR(2), DECLARE_PORT2_EEPROM_ATTR(3), DECLARE_PORT2_EEPROM_ATTR(17),
++    DECLARE_PORT3_EEPROM_ATTR(0), DECLARE_PORT3_EEPROM_ATTR(1), DECLARE_PORT3_EEPROM_ATTR(2), DECLARE_PORT3_EEPROM_ATTR(3), DECLARE_PORT3_EEPROM_ATTR(17),
++    DECLARE_PORT4_EEPROM_ATTR(0), DECLARE_PORT4_EEPROM_ATTR(1), DECLARE_PORT4_EEPROM_ATTR(2), DECLARE_PORT4_EEPROM_ATTR(3), DECLARE_PORT4_EEPROM_ATTR(17),
++    DECLARE_PORT5_EEPROM_ATTR(0), DECLARE_PORT5_EEPROM_ATTR(1), DECLARE_PORT5_EEPROM_ATTR(2), DECLARE_PORT5_EEPROM_ATTR(3), DECLARE_PORT5_EEPROM_ATTR(17),
++    DECLARE_PORT6_EEPROM_ATTR(0), DECLARE_PORT6_EEPROM_ATTR(1), DECLARE_PORT6_EEPROM_ATTR(2), DECLARE_PORT6_EEPROM_ATTR(3), DECLARE_PORT6_EEPROM_ATTR(17),
++    DECLARE_PORT7_EEPROM_ATTR(0), DECLARE_PORT7_EEPROM_ATTR(1), DECLARE_PORT7_EEPROM_ATTR(2), DECLARE_PORT7_EEPROM_ATTR(3), DECLARE_PORT7_EEPROM_ATTR(17),
++    DECLARE_PORT8_EEPROM_ATTR(0), DECLARE_PORT8_EEPROM_ATTR(1), DECLARE_PORT8_EEPROM_ATTR(2), DECLARE_PORT8_EEPROM_ATTR(3), DECLARE_PORT8_EEPROM_ATTR(17),
++    DECLARE_PORT9_EEPROM_ATTR(0), DECLARE_PORT9_EEPROM_ATTR(1), DECLARE_PORT9_EEPROM_ATTR(2), DECLARE_PORT9_EEPROM_ATTR(3), DECLARE_PORT9_EEPROM_ATTR(17),
++    DECLARE_PORT10_EEPROM_ATTR(0), DECLARE_PORT10_EEPROM_ATTR(1), DECLARE_PORT10_EEPROM_ATTR(2), DECLARE_PORT10_EEPROM_ATTR(3), DECLARE_PORT10_EEPROM_ATTR(17),
++    DECLARE_PORT11_EEPROM_ATTR(0), DECLARE_PORT11_EEPROM_ATTR(1), DECLARE_PORT11_EEPROM_ATTR(2), DECLARE_PORT11_EEPROM_ATTR(3), DECLARE_PORT11_EEPROM_ATTR(17),
++    DECLARE_PORT12_EEPROM_ATTR(0), DECLARE_PORT12_EEPROM_ATTR(1), DECLARE_PORT12_EEPROM_ATTR(2), DECLARE_PORT12_EEPROM_ATTR(3), DECLARE_PORT12_EEPROM_ATTR(17),
++    &sensor_dev_attr_app_locked.dev_attr.attr, 
++    &sensor_dev_attr_app_piu1_dco_mdio_locked.dev_attr.attr, &sensor_dev_attr_app_piu2_dco_mdio_locked.dev_attr.attr, 
++    &sensor_dev_attr_app_piu1_qsfp_locked.dev_attr.attr, &sensor_dev_attr_app_piu2_qsfp_locked.dev_attr.attr,
++    &sensor_dev_attr_app_rescan_locked.dev_attr.attr,
++    NULL,
++};
++
++static const struct attribute_group root_group =
++{
++    .attrs = root_attributes,
++};
++
++static const struct attribute_group fpga_group =
++{
++    .name = "fpga",
++    .attrs = sysfs_attributes, 
++};
++
++/* ==================== The Sysfs Interface Area [END] ==================== */
++
++static const struct of_device_id t600_fpga_of_match[] = {
++    {
++        .compatible = "fj,fpga-mdec",
++        .data = (void*)FJ_MDEC,
++    },
++    {
++        .compatible = "fj,fpga-mbcnt",
++        .data = (void*)FJ_MBCNT,
++    },
++    {
++        .compatible = "fj,fpga-cdec",
++        .data = (void*)FJ_CDEC,
++    },
++    {},
++};
++MODULE_DEVICE_TABLE(of, t600_fpga_of_match);
++
++static ssize_t de_new_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    const struct of_device_id *of_id = of_match_device(t600_fpga_of_match, dev);
++    int rc, setting, i;
++
++    rc = kstrtoint(buf, 10, &setting);
++    if(rc){
++        return rc;
++    }
++    if(1 != setting){
++        return -EINVAL;
++    }
++    if(fpga_dev->is_enable){
++        dev_err(dev, "attrs created before.\r\n");
++        return -ENODATA;
++    }
++
++    if(FJ_MDEC == (long)of_id->data)
++    {
++        /* T600 QSFP I2c access does not conflict. Set ModSelL. Always set ModSelL to 1.
++            Address is 0x00An0024. Port1:n=0x0~Port12:n=0xB */
++        for(i = 0; i < 12 ; i++)
++        {
++            t600_fj_mdec_write32(0x1, fpga_dev->hw_addr + HW_ModSelL + (i << 16));
++        }
++
++        /* Power on all port.
++           0: Power OFF(default)
++           1: Power ON
++           [0]: Port1 ~ [5]: Port6
++           [8]: Port7 ~ [13]: Port12
++        */
++        t600_fj_mdec_write32(0x00003F3F, fpga_dev->hw_addr + HW_VCC);
++    }
++
++    rc = sysfs_create_group(&dev->kobj, &fpga_group);
++    if(rc){
++        dev_err(dev, "failed to create attrs.\r\n");
++	return rc;
++    }
++
++    fpga_dev->is_enable = 1;
++
++    return count;
++}
++
++static ssize_t de_del_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
++{
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    int rc, setting;
++
++    rc = kstrtoint(buf, 10, &setting);
++    if(rc){
++        return rc;
++    }
++    if(1 != setting){
++        return -EINVAL;
++    }
++    if(!fpga_dev->is_enable){
++        dev_err(dev, "attrs deleted before.\r\n");
++        return -ENODATA;
++    }
++
++    sysfs_remove_group(&dev->kobj, &fpga_group);
++    fpga_dev->is_enable = 0;
++
++    return count;
++}
++
++static int accton_fpga_probe(struct platform_device *pdev)
++{
++    struct fpga_device* fpga_dev;
++    const struct of_device_id *of_id = of_match_device(t600_fpga_of_match, &pdev->dev);
++    int rc =  - EBUSY;
++    u32 reg;
++
++    dev_info(&pdev->dev, "%s v%s\n", DRIVER_DESCRIPTION_NAME, DRIVER_VERSION);
++
++    if (!of_id)
++    {
++        dev_err(&pdev->dev, "unmatch ID.\r\n");
++        goto err_out_int;
++    }
++
++
++    fpga_dev = devm_kzalloc(&pdev->dev, sizeof(*fpga_dev), GFP_KERNEL);
++    if(fpga_dev == NULL)
++    {
++        dev_err(&pdev->dev, "unable to allocate device memory.\r\n");
++        goto err_out_int;
++    }
++
++    mutex_init(&fpga_dev->app_lock);
++    mutex_init(&fpga_dev->app_piu1_dco_mdio_lock);
++    mutex_init(&fpga_dev->app_piu2_dco_mdio_lock);
++    mutex_init(&fpga_dev->app_piu1_qsfp_lock);
++    mutex_init(&fpga_dev->app_piu2_qsfp_lock);
++    mutex_init(&fpga_dev->app_piu_rescan);
++    mutex_init(&io_lock);
++    fpga_dev->is_enable = 0;
++
++    rc = of_property_read_u32(pdev->dev.of_node, "reg", &reg);
++    if(rc) {
++        dev_err(&pdev->dev, "invalid resource for node %s\n",
++            pdev->dev.of_node->full_name);
++        goto err_out_int;
++    }
++
++    platform_set_drvdata(pdev, fpga_dev);
++    fpga_dev->hw_addr = ioremap_nocache((0xc00000000 | reg), 0x2000000);
++    if(!fpga_dev->hw_addr)
++    {
++        dev_err(&pdev->dev, "mapping I/O device memory failure.\r\n");
++        rc =  - ENOMEM;
++        goto err_out_free;
++    }
++
++    rc = sysfs_create_group(&pdev->dev.kobj, &root_group);
++    if(rc)
++    {
++        dev_err(&pdev->dev, "failed to create attrs.\r\n");
++        rc =  - ENOMEM;
++        goto err_out_unmap;
++    }
++
++    dev_dbg(&pdev->dev, "initialization successful.\r\n");
++    return 0;
++
++err_out_unmap:
++    iounmap(fpga_dev->hw_addr);
++err_out_free:
++    kfree(fpga_dev);
++err_out_int:
++    dev_err(&pdev->dev, "initialization failed.\r\n");
++    return rc;
++}
++
++static int accton_fpga_remove(struct platform_device *pdev)
++{
++    struct fpga_device *fpga_dev = platform_get_drvdata(pdev);
++
++    if(fpga_dev->is_enable){
++        sysfs_remove_group(&pdev->dev.kobj, &fpga_group);
++    }
++
++    sysfs_remove_group(&pdev->dev.kobj, &root_group);
++    platform_set_drvdata(pdev, NULL);
++    iounmap(fpga_dev->hw_addr);
++
++    return 0;
++} 
++
++static const struct pci_device_id accton_fpga_tbl[] = 
++{
++    {
++        0x10CF, PCI_DEVICE_ID_CDEC, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0
++    } ,
++    {
++        0x10CF, PCI_DEVICE_ID_MBCNT, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0
++    } , 
++    {
++        0x10CF, PCI_DEVICE_ID_MDEC, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0
++    } ,
++    /* Required last entry. */
++    {
++        0, 
++    }
++};
++
++MODULE_DEVICE_TABLE(pci, accton_fpga_tbl);
++
++static struct platform_driver t600_fpga_driver = {
++	.driver = {
++		.name = DRIVER_NAME,
++		.of_match_table = of_match_ptr(t600_fpga_of_match),
++	},
++	.probe		= accton_fpga_probe,
++	.remove		= accton_fpga_remove,
++};
++
++module_platform_driver(t600_fpga_driver);
++
++
++MODULE_AUTHOR("Vincent Wang");
++MODULE_DESCRIPTION(DRIVER_DESCRIPTION_NAME);
++MODULE_LICENSE("GPL");
++MODULE_VERSION(DRIVER_VERSION);
+
+-- 
+1.9.1
+
