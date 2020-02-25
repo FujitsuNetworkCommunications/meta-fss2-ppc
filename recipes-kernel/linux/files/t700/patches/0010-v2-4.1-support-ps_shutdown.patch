@@ -2,13 +2,16 @@ From cf11616a6750cc84a57cb7fb14cb3bf95964584f Mon Sep 17 00:00:00 2001
 From: "Barlow, Terry" <Terry.Barlow@us.fujitsu.com>
 Date: Wed, 6 Feb 2019 15:30:05 -0600
 Subject: [PATCH] 4.1-support-ps_shutdown
+  NOTE: Mod by peter.bugni@fujitsu.com, Jan 2020:
+    rmv accton_t600_cpld.cc patch
+    mod fsl_soc.c reset type translation
+    mod fss2_reset.c to add power off
 
 ---
  arch/powerpc/sysdev/Makefile     |  2 +-
  arch/powerpc/sysdev/fsl_soc.c    | 56 +++++++++++++--------------
  arch/powerpc/sysdev/fss2_reset.c | 84 ++++++++++++++++++++++++++++++++++++++++
- drivers/hwmon/accton_t600_cpld.c | 30 +++++++++++---
- 4 files changed, 137 insertions(+), 35 deletions(-)
+ 3 files changed
  create mode 100644 arch/powerpc/sysdev/fss2_reset.c
 
 diff --git a/arch/powerpc/sysdev/Makefile b/arch/powerpc/sysdev/Makefile
@@ -50,7 +53,7 @@ index 9e9a02b..797786b 100644
 +/*!
 +** @brief Invoked at startup. Will allocate and map registers used during reset.
 +**        linux reset     -> FNC Warm reset
-+**        linux halt      -> FNC Hard Reset
++**        linux halt      -> FNC Power off
 +**        linux power off -> FNC Hard Reset
 +*/
 +extern void fss2_reset_warm(char *cmd);
@@ -75,9 +78,9 @@ index 9e9a02b..797786b 100644
 -		printk(KERN_ERR "No RSTCR register, warm reboot won't work\n");
 -
 -	of_node_put(np);
-+    ppc_md.restart    = fss2_reset_warm;         // Warm (default)
-+    pm_power_off      = fss2_reset_power_off;    // Hard
-+    ppc_md.halt       = fss2_reset_hard;         // Hard
++    ppc_md.restart    = fss2_reset_warm;         // Warm (reboot) (default)
++    pm_power_off      = fss2_reset_hard;         // Hard reset
++    ppc_md.halt       = fss2_reset_power_off;    // Power off
  
  	return 0;
  }
@@ -103,7 +106,7 @@ new file mode 100644
 index 0000000..6208da6
 --- /dev/null
 +++ b/arch/powerpc/sysdev/fss2_reset.c
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,87 @@
 +/*
 + * FSS2 Linux reset patch stub. Vendor responsibility
 + *
@@ -150,6 +153,7 @@ index 0000000..6208da6
 +
 +#define WARM_RESTART           2
 +#define COLD_RESTART           1
++#define POWER_OFF              0
 +
 +extern int t600_reset(int reset_type);
 +
@@ -184,86 +188,12 @@ index 0000000..6208da6
 +
 +void fss2_reset_power_off(void)
 +{
-+	/* Not do anything */
++    int status;
++    status = t600_reset(POWER_OFF);
++    return ;
 +}
 +
 +EXPORT_SYMBOL(fss2_reset_power_off);
-diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
-index 51044c9..fde7372 100644
---- a/drivers/hwmon/accton_t600_cpld.c
-+++ b/drivers/hwmon/accton_t600_cpld.c
-@@ -181,6 +181,8 @@ static struct attribute *t600_cpld_attributes[] = {
-   NULL
- };
- 
-+struct device *t600_cpld_dev;
-+
- static const struct attribute_group t600_cpld_group = {
-     .attrs = t600_cpld_attributes,
- };
-@@ -215,7 +217,6 @@ static int t600_cpld_write(struct i2c_client *client, u8 reg, u8 value)
-     return status;
- }
- 
--
- static ssize_t show_version(struct device *dev, struct device_attribute *da,
-              char *buf)
- {
-@@ -332,7 +333,25 @@ exit:
-     return status;
- }
- 
--static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
-+
-+int t600_reset(int reset_type)
-+{
-+	const char data_buf[3][12] = {{'0', '\n'},{'1', '\n'},{ '2', '\n'}};
-+
-+	if(NULL == t600_cpld_dev){
-+		return -1;
-+	}
-+
-+	if(reset_type < 1 || reset_type > 2){
-+		return -1;
-+	}
-+
-+	return reset(t600_cpld_dev, NULL, data_buf[reset_type], 1);
-+}
-+
-+EXPORT_SYMBOL(t600_reset);
-+
-+ static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
-              char *buf)
- {
-     int status = 0;
-@@ -447,7 +466,6 @@ exit:
- static ssize_t show_thermal_ctrl(struct device *dev, struct device_attribute *da
-                         ,char *buf)
- {
--    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
-     struct i2c_client *client = to_i2c_client(dev);
-     struct t600_cpld_data *data = i2c_get_clientdata(client);
-     int value = 0, status = 0; 
-@@ -474,7 +492,6 @@ static ssize_t set_thermal_ctrl(struct device *dev, struct device_attribute *da,
- {
-     int status = 0, thermal_ctrl = 0;
-     u8 regval=0;
--    struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
-     struct i2c_client *client = to_i2c_client(dev);
-     struct t600_cpld_data *data = i2c_get_clientdata(client);
- 
-@@ -688,8 +705,9 @@ static int t600_cpld_probe(struct i2c_client *client,
-         goto exit_remove;
-     }
- 
--   dev_info(&client->dev, "%s: cpld '%s'\n",
--         dev_name(data->hwmon_dev), client->name);
-+    t600_cpld_dev = &client->dev;
-+    dev_info(&client->dev, "%s: cpld '%s'\n",
-+    dev_name(data->hwmon_dev), client->name);
- 
-     return 0;
- 
 -- 
 1.8.3.1
 

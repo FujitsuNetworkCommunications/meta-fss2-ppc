@@ -1,27 +1,17 @@
-From 953267632d14f77af7c53166bfec0b1ae655abbe Mon Sep 17 00:00:00 2001
-From: sam_liao <sam_liao@accton.com>
-Date: Sat, 30 Jun 2018 03:40:24 +0000
-Subject: [PATCH] Chage to fit T650 NOR flash partition 16Mbyte mapping start
- offset:0xFEF000000     0x000000 ~ 0x01FFFF (128k) RCW    
- 0x020000 ~ 0x02FFFF (64k)  Reserved1     0x030000 ~
- 0x04FFFF (128k) H/W info.     0x050000 ~ 0x0FFFFF (704k)
- Reserved2     0x100000 ~ 0xEFFFFF (14M)  Reserved3    
- 0xF00000 ~ 0xF1FFFF (128k) FMAN ucode     0xF20000 ~
- 0xF3FFFF (128k) u-boot env     0xF40000 ~ 0xFFFFFF (768k)
- u-boot
+From bb1a94b465a24fd03c7c8e3a9a80568f334b8958 Mon Sep 17 00:00:00 2001
+From: "Barlow, Terry" <Terry.Barlow@us.fujitsu.com>
+Date: Thu, 31 Jan 2019 13:22:54 -0600
+Subject: [PATCH] 4.1-Chage-to-fit-T600-NOR-flash-partition
 
-    0x0xFEF000000 ~ 0xFEFFFFFF , total 16MByte. 2byte swap.
-
-	modified:   arch/powerpc/boot/dts/t208xrdb.dtsi
 ---
- arch/powerpc/boot/dts/t208xrdb.dtsi |   56 +++++++++++++++++++++++++++++------
+ arch/powerpc/boot/dts/fsl/t208xrdb.dtsi | 56 +++++++++++++++++++++++++++------
  1 file changed, 47 insertions(+), 9 deletions(-)
 
-diff --git a/arch/powerpc/boot/dts/t208xrdb.dtsi b/arch/powerpc/boot/dts/t208xrdb.dtsi
-index 5fe951e..2d31973 100644
---- a/arch/powerpc/boot/dts/t208xrdb.dtsi
-+++ b/arch/powerpc/boot/dts/t208xrdb.dtsi
-@@ -41,7 +41,7 @@
+diff --git a/arch/powerpc/boot/dts/fsl/t208xrdb.dtsi b/arch/powerpc/boot/dts/fsl/t208xrdb.dtsi
+index fdeb992..fb9c73a 100644
+--- a/arch/powerpc/boot/dts/fsl/t208xrdb.dtsi
++++ b/arch/powerpc/boot/dts/fsl/t208xrdb.dtsi
+@@ -72,7 +72,7 @@
  
  	ifc: localbus@ffe124000 {
  		reg = <0xf 0xfe124000 0 0x2000>;
@@ -30,7 +20,7 @@ index 5fe951e..2d31973 100644
  			  2 0 0xf 0xff800000 0x00010000
  			  3 0 0xf 0xffdf0000 0x00008000>;
  
-@@ -49,19 +49,57 @@
+@@ -80,19 +80,57 @@
  			#address-cells = <1>;
  			#size-cells = <1>;
  			compatible = "cfi-flash";
@@ -97,5 +87,5 @@ index 5fe951e..2d31973 100644
  			#address-cells = <1>;
  			#size-cells = <1>;
 -- 
-1.7.9.5
+1.8.3.1
 
