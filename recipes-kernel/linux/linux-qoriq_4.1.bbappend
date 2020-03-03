@@ -141,7 +141,8 @@ SRC_URI_append_t700 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T700-NOR
                         file://${MACHINE}/patches/0001-4.1-match-3.12-kernel-temperature-sysfs.patch               \
                         file://${MACHINE}/patches/0001-4.1-race-condition-in-pci-enable-disable-device.patch       \
                         file://${MACHINE}/patches/0053-4.1-T600-3041-FIPS-disable-print-of-keys.patch              \
-                        file://${MACHINE}/patches/0056-mdio-bus-find-by-name.patch                                 \ 
+                        file://${MACHINE}/patches/0056-mdio-bus-find-by-name.patch                                 \
+                        file://${MACHINE}/patches/0058-Modify-blade-reset.patch                                    \
                        "
 
 
@@ -202,4 +203,4 @@ do_deploy_prepend() {
     done
 }
 
-PR := "${PR}.11"
+PR := "${PR}.12"
