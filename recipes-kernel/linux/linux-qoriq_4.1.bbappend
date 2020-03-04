@@ -143,6 +143,7 @@ SRC_URI_append_t700 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T700-NOR
                         file://${MACHINE}/patches/0053-4.1-T600-3041-FIPS-disable-print-of-keys.patch              \
                         file://${MACHINE}/patches/0056-mdio-bus-find-by-name.patch                                 \
                         file://${MACHINE}/patches/0058-Modify-blade-reset.patch                                    \
+                        file://${MACHINE}/patches/0059-T700-214-Support-T700-FAN-for-kernel-driver.patch           \
                        "
 
 
