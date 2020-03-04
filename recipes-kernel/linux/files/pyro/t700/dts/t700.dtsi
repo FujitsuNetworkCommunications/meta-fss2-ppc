@@ -167,36 +167,6 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 
-				i2c@0 {
-					#address-cells = <1>;
-					#size-cells = <0>;
-					reg = <0x0>;
-
-					eeprom@50 {
-						compatible = "at24,24c02";
-						reg = <0x50>;
-					};
-					DPS_850AB@58 {
-						compatible = "dps_800ab_16_d";
-						reg = <0x58>;
-					};
-				};
-
-				i2c@1 {
-					#address-cells = <1>;
-					#size-cells = <0>;
-					reg = <0x1>;
-
-					eeprom@52 {
-						compatible = "at24,24c02";
-						reg = <0x52>;
-					};
-					DPS_850AB@5a {
-						compatible = "dps_800ab_16_d";
-						reg = <0x5a>;
-					};
-				};
-
 				i2c@2 {
 					#address-cells = <1>;
 					#size-cells = <0>;
@@ -214,12 +184,12 @@
 					reg = <0x4>;
 
 					eeprom@52 {
-						compatible = "at24,24c64";
+						compatible = "at24,24c04";
 						reg = <0x52>;
 					};
 
 					eeprom@53 {
-						compatible = "at24,24c64";
+						compatible = "at24,24c04";
 						reg = <0x53>;
 					};
 				};
@@ -230,7 +200,7 @@
 					reg = <0x6>;
 
 					t600_fan@61 {
-						compatible = "t600_fan";
+						compatible = "act,fan12";
 						reg = <0x61>;
 					};
 
@@ -240,14 +210,34 @@
 						#address-cells = <1>;
 						#size-cells = <0>;
 
+						i2c@0 {
+							#address-cells = <1>;
+							#size-cells = <0>;
+							reg = <0x0>;
+
+							eeprom@50 {
+								compatible = "at24,24c02";
+								reg = <0x50>;
+							};
+
+							eeprom@51 {
+								compatible = "at24,24c02";
+								reg = <0x51>;
+							};
+						};
 						i2c@1 {
 							#address-cells = <1>;
 							#size-cells = <0>;
 							reg = <0x1>;
 
-							eeprom@56 {
-								compatible = "at24,24c64";
-								reg = <0x56>;
+							eeprom@50 {
+								compatible = "at24,24c02";
+								reg = <0x50>;
+							};
+
+							eeprom@51 {
+								compatible = "at24,24c02";
+								reg = <0x51>;
 							};
 						};
 						i2c@2 {
@@ -255,39 +245,14 @@
 							#size-cells = <0>;
 							reg = <0x2>;
 
-							eeprom@56 {
-								compatible = "at24,24c64";
-								reg = <0x56>;
+							eeprom@50 {
+								compatible = "at24,24c02";
+								reg = <0x50>;
 							};
-						};
-						i2c@3 {
-							#address-cells = <1>;
-							#size-cells = <0>;
-							reg = <0x3>;
 
-							eeprom@56 {
-								compatible = "at24,24c64";
-								reg = <0x56>;
-							};
-						};
-						i2c@4 {
-							#address-cells = <1>;
-							#size-cells = <0>;
-							reg = <0x4>;
-
-							eeprom@56 {
-								compatible = "at24,24c64";
-								reg = <0x56>;
-							};
-						};
-						i2c@5 {
-							#address-cells = <1>;
-							#size-cells = <0>;
-							reg = <0x5>;
-
-							eeprom@56 {
-								compatible = "at24,24c64";
-								reg = <0x56>;
+							eeprom@51 {
+								compatible = "at24,24c02";
+								reg = <0x51>;
 							};
 						};
 					};
