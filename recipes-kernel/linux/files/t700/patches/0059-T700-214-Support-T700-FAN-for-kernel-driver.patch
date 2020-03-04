@@ -15,15 +15,6 @@ diff --git a/drivers/hwmon/Kconfig b/drivers/hwmon/Kconfig
 index 98a42f1..c6222bc 100644
 --- a/drivers/hwmon/Kconfig
 +++ b/drivers/hwmon/Kconfig
-@@ -82,7 +82,7 @@ config SENSORS_ABITUGURU3
- 	  will be called abituguru3.
- 
- config SENSORS_ACCTON_T600_CPLD
--	tristate "Accton t600 cpld"
-+	tristate "Accton T600 cpld"
- 	depends on I2C
- 	help
- 	  If you say yes here you get support for Accton t600 cpld.
 @@ -97,6 +97,14 @@ config SENSORS_ACCTON_T600_FAN
  	  This driver can also be built as a module. If so, the module will
  	  be called accton_t600_fan.
