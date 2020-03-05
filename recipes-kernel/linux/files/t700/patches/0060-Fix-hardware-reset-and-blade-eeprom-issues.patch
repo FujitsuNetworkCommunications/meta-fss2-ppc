@@ -48,7 +48,7 @@ index 2d55be6..09a240f 100755
  {
  	int status;
 -	status = fss2_reset(COLD_RESTART);
-+	status = fss2_reset(POWER_OFF);
++	status = fss2_reset(COLD_RESTART);  /* fnc hard */
  	return ;
  }
  
@@ -65,7 +65,7 @@ index 2d55be6..09a240f 100755
 -    status = fss2_reset(POWER_OFF);
 -    return ;
 +	int status;
-+	status = fss2_reset(COLD_RESTART);
++	status = fss2_reset(POWER_OFF);  /* fnc power off */
 +	return ;
  }
  
