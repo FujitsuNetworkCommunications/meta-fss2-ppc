@@ -150,7 +150,7 @@ index 11414a1..1c87b8c 100755
 +{
 +	t600_fj_mdec_write32_mask(0x1, 0x1, cdec_addr + TRUE_PWR_ST);
 +	t600_fj_mdec_write32(0xCC665AA5, cdec_addr + TRUE_PWR_EN);
-+	t600_fj_mdec_write32_mask(0x1, 0x1, cdec_addr + TRUE_PWR_CTL);
++	t600_fj_mdec_write32(0x1, cdec_addr + TRUE_PWR_CTL);
 +
 +}
 +EXPORT_SYMBOL(reset_by_fpga);
@@ -172,5 +172,4 @@ index 11414a1..1c87b8c 100755
      {
 -- 
 1.9.1
-
 
