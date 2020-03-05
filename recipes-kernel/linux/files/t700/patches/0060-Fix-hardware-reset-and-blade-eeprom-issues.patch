@@ -1,0 +1,155 @@
+From c0ef493e9b20bc1e9b4e0d3d004dc56dc1463f9c Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Thu, 5 Mar 2020 20:32:57 +0800
+Subject: [PATCH] Fix hardware reset and blade eeprom issues 1. T700-230: Blade
+ EEPROM is null in bank2    Modify blade driver to 24c64. It support 16 bit
+ address mapping.
+
+    24c04 - 512 byte, address pointer is 8 bit
+    24c64 - 8192 byte, address pointer is 16 bit
+
+2. T700-203: Provide Kernel patch for blade hardware reset
+   Fix bug and supportT 700 power off function.
+---
+ arch/powerpc/sysdev/fss2_reset.c | 19 +++++++------------
+ drivers/hwmon/accton_t600_cpld.c | 32 ++++++++++++++++++++++++++------
+ 2 files changed, 33 insertions(+), 18 deletions(-)
+
+diff --git a/arch/powerpc/sysdev/fss2_reset.c b/arch/powerpc/sysdev/fss2_reset.c
+index 2d55be6..09a240f 100755
+--- a/arch/powerpc/sysdev/fss2_reset.c
++++ b/arch/powerpc/sysdev/fss2_reset.c
+@@ -52,8 +52,6 @@
+ extern int reset_by_cpld(int reset_type);
+ extern void reset_by_fpga(void);
+ 
+-/* FSS2 Reset Warm function stub */
+-//static u32 fss2_reset_warm = -1;
+ 
+ int fss2_reset(int reset_type)
+ {
+@@ -81,6 +79,7 @@ int fss2_reset(int reset_type)
+ 	return 0;
+ }
+ 
++/* linux reset -> FNC Warm reset */
+ void fss2_reset_warm(char *cmd)
+ {
+ 	int status;
+@@ -91,27 +90,23 @@ void fss2_reset_warm(char *cmd)
+ EXPORT_SYMBOL(fss2_reset_warm);
+ 
+ 
+-/* FSS2 Reset hard function stub */
+-//static u32 fss2_reset_hard = -1;
+-
++/* linux power off -> FNC Hard Reset */
+ void fss2_reset_hard(void)
+ {
+ 	int status;
+-	status = fss2_reset(COLD_RESTART);
++	status = fss2_reset(POWER_OFF);
+ 	return ;
+ }
+ 
+ EXPORT_SYMBOL(fss2_reset_hard);
+ 
+ 
+-/* FSS2 Reset power_off function stub */
+-//static u32 fss2_reset_power_off = -1;
+-
++/* linux halt -> FNC Power off */
+ void fss2_reset_power_off(void)
+ {
+-    int status;
+-    status = fss2_reset(POWER_OFF);
+-    return ;
++	int status;
++	status = fss2_reset(COLD_RESTART);
++	return ;
+ }
+ 
+ EXPORT_SYMBOL(fss2_reset_power_off);
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index 9112eb8..39d710b 100755
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -50,6 +50,7 @@
+ #define BOARD_REV_REG               0x1
+ #define CPLD_VER_REG                0x2
+ #define PSU_STATUS_REG              0x3
++#define RESET_CONTROL3_REG          0x7
+ #define SFP_PWR_REG                 0x14
+ #define BOOT_STATUS_REG             0x25
+ #define PIU_STATUS_REG              0x24
+@@ -66,6 +67,7 @@
+ struct t600_cpld_data {
+     struct device      *hwmon_dev;
+     struct mutex        update_lock;
++    u8                  chip_id;
+ };
+ 
+ /* Addresses scanned for t600_cpld
+@@ -78,6 +80,11 @@ static const unsigned short normal_i2c[] = { I2C_CLIENT_END };
+ #define PIU_PRESENT_ATTR_ID(index)      PIU##index##_PRESENT
+ #define SFP_PWR_ATTR_ID(index)          SFP##index##_PWR
+ 
++enum t600_cpld_type {
++    t600,
++    t700,
++};
++
+ enum t600_cpld_sysfs_attributes {
+     BOARD_VERSION,
+     CPLD_VERSION,
+@@ -380,13 +387,24 @@ static ssize_t reset(struct device *dev, struct device_attribute *da,
+     else if (reset == 0)
+     {
+         /* POWER-OFF */
+-        status = t600_cpld_read(client, SYSTEM_RESET_REG);
+-        if (unlikely(status < 0)) {
+-            goto exit;
++        if(t700 == data->chip_id){
++            status = t600_cpld_read(client, RESET_CONTROL3_REG);
++            if (unlikely(status < 0)) {
++                goto exit;
++            }
++
++            regval = status | (0x1 << 1);
++            status = t600_cpld_write(client, RESET_CONTROL3_REG, regval);
+         }
++        else{
++            status = t600_cpld_read(client, SYSTEM_RESET_REG);
++            if (unlikely(status < 0)) {
++                goto exit;
++            }
+ 
+-        regval = status | 0x1;
+-        status = t600_cpld_write(client, SYSTEM_RESET_REG, regval);
++            regval = status | 0x1;
++            status = t600_cpld_write(client, SYSTEM_RESET_REG, regval);
++        }
+     }
+ 
+     if (unlikely(status < 0)) {
+@@ -894,6 +912,7 @@ static int t600_cpld_probe(struct i2c_client *client,
+     t600_cpld_dev = &client->dev;
+     dev_info(&client->dev, "%s: cpld '%s'\n",
+     dev_name(data->hwmon_dev), client->name);
++    data->chip_id= dev_id->driver_data;
+ 
+     return 0;
+ 
+@@ -918,7 +937,8 @@ static int t600_cpld_remove(struct i2c_client *client)
+ }
+ 
+ static const struct i2c_device_id t600_cpld_id[] = {
+-    { DRVNAME, 0 },
++    { "t600_cpld", t600 },
++    { "t700_cpld", t700 },
+     {}
+ };
+ MODULE_DEVICE_TABLE(i2c, t600_cpld_id);
+-- 
+1.9.1
+

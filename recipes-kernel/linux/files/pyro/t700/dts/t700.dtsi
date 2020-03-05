@@ -155,7 +155,7 @@
 			};
 
 			t600_cpld@60 {
-				compatible = "t600_cpld";
+				compatible = "t700_cpld";
 				reg = <0x60>;
                         };
 		};
@@ -184,12 +184,12 @@
 					reg = <0x4>;
 
 					eeprom@52 {
-						compatible = "at24,24c04";
+						compatible = "at24,24c64";
 						reg = <0x52>;
 					};
 
 					eeprom@53 {
-						compatible = "at24,24c04";
+						compatible = "at24,24c64";
 						reg = <0x53>;
 					};
 				};
