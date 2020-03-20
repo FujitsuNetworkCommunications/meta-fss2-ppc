@@ -1,0 +1,66 @@
+From 2b3ad55298f3aa03048d1ee97278cb31b66ba289 Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge.core.com>
+Date: Fri, 20 Mar 2020 18:41:38 +0800
+Subject: [PATCH] Modify pwm function for T700.
+
+The size of pwm register is 16 bit. T700 pwm is 0-255.
+---
+ drivers/hwmon/accton_t700_fan.c | 21 ++-------------------
+ 1 file changed, 2 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/hwmon/accton_t700_fan.c b/drivers/hwmon/accton_t700_fan.c
+index 236f142..b53a404 100755
+--- a/drivers/hwmon/accton_t700_fan.c
++++ b/drivers/hwmon/accton_t700_fan.c
+@@ -312,19 +312,6 @@ static int t700_fan_write_value(struct i2c_client *client, u8 reg, u8 value)
+ }
+ 
+ /* fan utility functions */
+-static u32 reg_val_to_duty_cycle(u8 reg_val) 
+-{
+-    if (reg_val < 0x1){
+-        return 0;
+-     }
+-
+-    reg_val &= FAN_DUTY_CYCLE_REG_MASK;
+-    return ((reg_val << 4) + 15);
+-}
+-static u8 duty_cycle_to_reg_val(u8 duty_cycle) 
+-{
+-    return (duty_cycle >> 4);
+-}
+ static u32 reg_val_to_speed_rpm(u8 reg_val)
+ {
+     return (u32)reg_val * FAN_REG_VAL_TO_SPEED_RPM_STEP;
+@@ -372,10 +359,6 @@ static int fan_set_duty_cycle_to_cpld(struct i2c_client *client, int new_duty_cy
+     struct t700_fan_data *data = i2c_get_clientdata(client);
+     u8 reg = fan_reg[0x3];
+     int ret;
+-    
+-    if (new_duty_cycle < 1 || new_duty_cycle > 16) {
+-        new_duty_cycle = 16;   /* New CPLD value range: 1 ~ 16*/
+-    }
+ 
+     /* Update duty cycle
+      */
+@@ -401,7 +384,7 @@ static ssize_t set_duty_cycle(struct device *dev, struct device_attribute *da,
+         return -EINVAL;
+     }
+ 
+-    fan_set_duty_cycle_to_cpld(client, duty_cycle_to_reg_val(value));
++    fan_set_duty_cycle_to_cpld(client, value);
+     
+     return count;
+ }
+@@ -559,7 +542,7 @@ static ssize_t fan_show_value(struct device *dev, struct device_attribute *da,
+     if (data->valid) {
+         switch (attr->index) {
+             case FAN_PWM1:
+-                duty_cycle = reg_val_to_duty_cycle(data->reg_val[FAN_PWM1]);
++                duty_cycle = data->reg_val[FAN_PWM1];
+                 ret = sprintf(buf, "%u\n", duty_cycle);
+                 break;
+             case FAN_2_I_INPUT_ATTR_ID(3)...FAN_1_O_INPUT_ATTR_ID(1):
+-- 
+1.9.1
+
