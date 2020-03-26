@@ -147,6 +147,7 @@ SRC_URI_append_t700 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T700-NOR
                         file://${MACHINE}/patches/0060-Fix-hardware-reset-and-blade-eeprom-issues.patch            \
                         file://${MACHINE}/patches/0061-T700-232-leap-year-issue.patch                              \
                         file://${MACHINE}/patches/0062-Modify-pwm-function-for-T700.patch                          \
+                        file://${MACHINE}/patches/0063-Modify-FAN_REG_CONT-index.patch                             \
                        "
 
 
