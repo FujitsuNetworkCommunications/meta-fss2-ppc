@@ -1,0 +1,73 @@
+From 37ce3f1ef25b991a4ee4124c976f7ff9444b3fc1 Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge.core.com>
+Date: Wed, 25 Mar 2020 16:37:43 +0800
+Subject: [PATCH] Modify FAN_REG_CONT index.
+
+The index value should be 20. It is mapping register 0x46.
+---
+ drivers/hwmon/accton_t700_fan.c | 14 ++++++--------
+ 1 file changed, 6 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/hwmon/accton_t700_fan.c b/drivers/hwmon/accton_t700_fan.c
+index b53a404..9cc9977 100755
+--- a/drivers/hwmon/accton_t700_fan.c
++++ b/drivers/hwmon/accton_t700_fan.c
+@@ -132,6 +132,9 @@ enum sysfs_fan_attributes {
+     FAN_1_O_INPUT_ATTR_ID(1),
+     FAN_ENABLE_REG,
+     FAN_WATCHDOG,
++    FAN_REG_LED,
++    FAN_REG_LED_BLINK,
++    FAN_REG_CONT,
+     ACCESS,                 /* access cpld register */  
+     FAN_ENABLE_ATTR_ID(1),  /* FAN X control switch */
+     FAN_ENABLE_ATTR_ID(2),
+@@ -158,7 +161,6 @@ enum sysfs_fan_attributes {
+     FAN_LED_BLINK_ATTR_ID(3),
+     FAN_LED_BLINK_ATTR_ID(4),
+     FAN_LED_BLINK_ATTR_ID(5),
+-    FAN_CONT,
+ };
+ 
+ /* Define attributes */
+@@ -187,7 +189,7 @@ enum sysfs_fan_attributes {
+ static SENSOR_DEVICE_ATTR(cpld_version, S_IRUGO, fan_show_value, NULL, CPLD_VERSION);
+ static SENSOR_DEVICE_ATTR(fan_watchdog, S_IWUSR | S_IRUGO, fan_show_value, set_fan_bit, FAN_WATCHDOG);
+ static SENSOR_DEVICE_ATTR(raw_access, S_IWUSR | S_IRUGO, NULL, raw_access, ACCESS);
+-static SENSOR_DEVICE_ATTR(fan_cont, S_IWUSR | S_IRUGO, fan_show_value, set_fan_bit, FAN_CONT);
++static SENSOR_DEVICE_ATTR(fan_cont, S_IWUSR | S_IRUGO, fan_show_value, set_fan_bit, FAN_REG_CONT);
+ 
+ #define DECLARE_FAN_DUTY_CYCLE_SENSOR_DEV_ATTR(index) \
+     static SENSOR_DEVICE_ATTR(pwm##index, S_IWUSR | S_IRUGO, fan_show_value, set_duty_cycle, FAN_PWM1)
+@@ -270,10 +272,6 @@ static const struct attribute_group t700_fan12_group = {
+ #define I2C_RW_RETRY_COUNT          10
+ #define I2C_RW_RETRY_INTERVAL           60 /* ms */
+ 
+-#define FAN_REG_LED             16
+-#define FAN_REG_LED_BLINK       17
+-#define FAN_REG_CONT            18
+-
+ #define FAN_REG_CONT_MASK       0x1
+ 
+ static int t700_fan_read_value(struct i2c_client *client, u8 reg)
+@@ -419,7 +417,7 @@ static ssize_t set_fan_bit(struct device *dev, struct device_attribute *da,
+         mask = 0x1 << (attr->index - FAN1_ENABLE);
+ 	index = FAN_ENABLE_REG;
+         break;
+-    case FAN_CONT:
++    case FAN_REG_CONT:
+         reg  = fan_reg[FAN_REG_CONT];
+         mask = FAN_REG_CONT_MASK;
+ 	index = FAN_REG_CONT;
+@@ -577,7 +575,7 @@ static ssize_t fan_show_value(struct device *dev, struct device_attribute *da,
+                 ret = sprintf(buf, "%d\n",
+                               reg_val_to_is_enable(data->reg_val[FAN_WATCHDOG], 0) );
+                 break;
+-            case FAN_CONT:
++            case FAN_REG_CONT:
+                 ret = sprintf(buf, "%d\n", data->reg_val[FAN_REG_CONT] & FAN_REG_CONT_MASK);
+                 break;
+             default:
+-- 
+1.9.1
+
