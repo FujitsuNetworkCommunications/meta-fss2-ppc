@@ -51,8 +51,8 @@ index 831b884..7f2773a 100755
  }
  
 +static int t600_mdec_i2c_smbus_xfer(struct i2c_adapter *adap, u16 addr,
-+		       unsigned short flags, char read_write, u8 command,
-+		       int size, union i2c_smbus_data *data)
++            unsigned short flags, char read_write, u8 command,
++            int size, union i2c_smbus_data *data)
 +{
 +    struct fpga_adapter *fpga_adap = i2c_get_adapdata(adap);
 +    struct device* dev = fpga_adap->parent;
@@ -70,18 +70,18 @@ index 831b884..7f2773a 100755
 +    {
 +        if(read_write == I2C_SMBUS_WRITE)
 +        {
-+	    dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  WRITE\n");
-+	    mutex_lock(&fpga_adap->i2c_lock);
-+	    write_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command, data->byte);
-+	    mutex_unlock(&fpga_adap->i2c_lock);
++          dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  WRITE\n");
++          mutex_lock(&fpga_adap->i2c_lock);
++          write_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command, data->byte);
++          mutex_unlock(&fpga_adap->i2c_lock);
 +        }
-+	else
++        else
 +        {
-+	    dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  READ\n");
-+	    mutex_lock(&fpga_adap->i2c_lock);
-+	    value = read_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command);
-+	    mutex_unlock(&fpga_adap->i2c_lock);
-+	    data->byte = value;
++          dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  READ\n");
++          mutex_lock(&fpga_adap->i2c_lock);
++          value = read_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command);
++          mutex_unlock(&fpga_adap->i2c_lock);
++          data->byte = value;
 +        }
 +        break;
 +    }
@@ -102,29 +102,23 @@ index 831b884..7f2773a 100755
  /* =================== The Sysfs Interface Area [START] =================== */
  static ssize_t cpld_version_show(struct device* dev, struct device_attribute* attr, char* buf)
  {
-@@ -1208,12 +1268,18 @@ static const struct attribute_group fpga_group =
+@@ -1208,6 +1268,11 @@ static const struct attribute_group fpga_group =
      .attrs = sysfs_attributes, 
  };
  
 +struct i2c_algorithm t600_mdec_i2c_algorithm = {
-+	.smbus_xfer	= t600_mdec_i2c_smbus_xfer,
-+	.functionality = t600_mdec_i2c_func,
++  .smbus_xfer    = t600_mdec_i2c_smbus_xfer,
++  .functionality = t600_mdec_i2c_func,
 +};
 +
  /* ==================== The Sysfs Interface Area [END] ==================== */
  void reset_by_fpga(void)
  {
- 	t600_fj_mdec_write32_mask(0x1, 0x1, cdec_addr + TRUE_PWR_ST);
- 	t600_fj_mdec_write32(0xCC665AA5, cdec_addr + TRUE_PWR_EN);
- 	t600_fj_mdec_write32(0x1, cdec_addr + TRUE_PWR_CTL);
-+
- }
- EXPORT_SYMBOL(reset_by_fpga);
- 
-@@ -1305,6 +1371,57 @@ static ssize_t de_del_store(struct device* dev, struct device_attribute* attr, c
+@@ -1305,6 +1370,57 @@ static ssize_t de_del_store(struct device* dev, struct device_attribute* attr, c
+
      return count;
  }
- 
++
 +static int fpga_i2c_add_adapter(struct platform_device *pdev)
 +{
 +    struct device_node *mdec_node = NULL, *i2c_ctrl_node = NULL;
@@ -144,7 +138,7 @@ index 831b884..7f2773a 100755
 +        mutex_init(&fpga_dev->fpga_adap[num].i2c_lock);
 +        i2c_set_adapdata(&fpga_dev->fpga_adap[num].adap, &fpga_dev->fpga_adap[num]);
 +        snprintf(fpga_dev->fpga_adap[num].adap.name,
-+	    sizeof(fpga_dev->fpga_adap[num].adap.name),"fj-mdec (Port %d)", num);
++               sizeof(fpga_dev->fpga_adap[num].adap.name),"fj-mdec (Port %d)", num);
 +
 +        fpga_dev->fpga_adap[num].port_index = num;
 +        fpga_dev->fpga_adap[num].adap.owner = THIS_MODULE;
@@ -175,7 +169,7 @@ index 831b884..7f2773a 100755
 +
 +    return rc;
 +}
-+
+
  static int accton_fpga_probe(struct platform_device *pdev)
  {
      struct fpga_device* fpga_dev;
@@ -194,7 +188,7 @@ index 831b884..7f2773a 100755
 +    else if(FJ_MDEC == (long)of_id->data)
 +    {
 +        rc = fpga_i2c_add_adapter(pdev);
-+	if(rc)
++        if(rc)
 +        {
 +            goto err_out_unmap;
 +        }
