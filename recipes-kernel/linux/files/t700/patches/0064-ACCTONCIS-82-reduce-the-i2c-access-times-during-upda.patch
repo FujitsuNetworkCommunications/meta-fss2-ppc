@@ -1,0 +1,222 @@
+From 22a532f2c6b8d0386a6b3857f46c960103f29cef Mon Sep 17 00:00:00 2001
+From: Aken Liu <aken_liu@accton.com>
+Date: Thu, 9 Apr 2020 16:55:30 +0800
+Subject: [PATCH] ACCTONCIS-82: reduce the i2c access times during updating the
+ QSFP's PM Add i2c smbus xfer for every CL port. 1. Application can read QSFP
+ PI by i2cget command. 2. There are 12 mutex for every CL port.
+
+---
+ drivers/misc/accton_t600_fj_mdec.c | 134 ++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 133 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index 831b884..7f2773a 100755
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -37,7 +37,9 @@
+ #include <linux/delay.h>
+ #include <linux/of.h>
+ #include <linux/of_device.h>
++#include <linux/i2c.h>
+ 
++#define PORT_NUMBER_MAX                                         12
+ #define FPGA_MNG_I2C_WORKAROUND                                 0
+ #define DRIVER_NAME                                             "fujitsu_mdec_fpga"
+ #define DRIVER_DESCRIPTION_NAME                                 "Fujitsu FPGA PCI device driver"
+@@ -160,6 +162,14 @@ enum fpga_sysfs_attributes
+     PIU1_DCO_MDIO_LOCK, PIU2_DCO_MDIO_LOCK, PIU1_QSFP_LOCK, PIU2_QSFP_LOCK, MDEC_LOCK, PIU_RESCAN_LOCK,
+ };
+ 
++struct fpga_adapter
++{
++    struct i2c_adapter adap;
++    struct device *parent;
++    struct mutex i2c_lock;
++    int port_index;
++};
++
+ struct fpga_device
+ {
+     char __iomem* hw_addr;
+@@ -171,6 +181,7 @@ struct fpga_device
+     struct mutex app_piu2_dco_mdio_lock;
+     struct mutex app_piu_rescan;
+     struct device dev;
++    struct fpga_adapter fpga_adap[PORT_NUMBER_MAX];
+ 
+     /* for read data */
+     u32 mdec_read_result_data;
+@@ -226,6 +237,55 @@ static void t600_fj_mdec_write32_mask(u32 value, u32 mask, void *addr)
+     t600_fj_mdec_write32(write_data, addr);
+ }
+ 
++static int t600_mdec_i2c_smbus_xfer(struct i2c_adapter *adap, u16 addr,
++		       unsigned short flags, char read_write, u8 command,
++		       int size, union i2c_smbus_data *data)
++{
++    struct fpga_adapter *fpga_adap = i2c_get_adapdata(adap);
++    struct device* dev = fpga_adap->parent;
++    struct fpga_device* fpga_dev = dev_get_drvdata(dev);
++    u8 value;
++
++    if(!fpga_dev->is_enable)
++    {
++        dev_dbg(dev, "Device is not enable\n");
++        return -ENOTCONN;
++    }
++
++    switch (size) {
++    case I2C_SMBUS_BYTE_DATA:
++    {
++        if(read_write == I2C_SMBUS_WRITE)
++        {
++	    dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  WRITE\n");
++	    mutex_lock(&fpga_adap->i2c_lock);
++	    write_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command, data->byte);
++	    mutex_unlock(&fpga_adap->i2c_lock);
++        }
++	else
++        {
++	    dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  READ\n");
++	    mutex_lock(&fpga_adap->i2c_lock);
++	    value = read_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command);
++	    mutex_unlock(&fpga_adap->i2c_lock);
++	    data->byte = value;
++        }
++        break;
++    }
++
++    default:
++        dev_err(dev, "Unsupported transaction %d\n",size);
++        return -EOPNOTSUPP;
++    }
++
++    return 0;
++}
++
++u32 t600_mdec_i2c_func(struct i2c_adapter *adap)
++{
++    return (I2C_FUNC_SMBUS_BYTE_DATA);
++}
++
+ /* =================== The Sysfs Interface Area [START] =================== */
+ static ssize_t cpld_version_show(struct device* dev, struct device_attribute* attr, char* buf)
+ {
+@@ -1208,12 +1268,18 @@ static const struct attribute_group fpga_group =
+     .attrs = sysfs_attributes, 
+ };
+ 
++struct i2c_algorithm t600_mdec_i2c_algorithm = {
++	.smbus_xfer	= t600_mdec_i2c_smbus_xfer,
++	.functionality = t600_mdec_i2c_func,
++};
++
+ /* ==================== The Sysfs Interface Area [END] ==================== */
+ void reset_by_fpga(void)
+ {
+ 	t600_fj_mdec_write32_mask(0x1, 0x1, cdec_addr + TRUE_PWR_ST);
+ 	t600_fj_mdec_write32(0xCC665AA5, cdec_addr + TRUE_PWR_EN);
+ 	t600_fj_mdec_write32(0x1, cdec_addr + TRUE_PWR_CTL);
++
+ }
+ EXPORT_SYMBOL(reset_by_fpga);
+ 
+@@ -1305,6 +1371,57 @@ static ssize_t de_del_store(struct device* dev, struct device_attribute* attr, c
+     return count;
+ }
+ 
++static int fpga_i2c_add_adapter(struct platform_device *pdev)
++{
++    struct device_node *mdec_node = NULL, *i2c_ctrl_node = NULL;
++    struct fpga_device *fpga_dev = platform_get_drvdata(pdev);
++    int rc =  - EBUSY, num;
++    u32 reg;
++
++    /* of match also */
++    mdec_node = of_find_compatible_node(NULL, NULL, "fj,fpga-mdec");
++    if(!mdec_node)
++    {
++        dev_err(&pdev->dev, "failed to match fpga-mdec.\r\n");
++        return -ENODEV;
++    }
++
++    for(num=0; num<PORT_NUMBER_MAX; num++){
++        mutex_init(&fpga_dev->fpga_adap[num].i2c_lock);
++        i2c_set_adapdata(&fpga_dev->fpga_adap[num].adap, &fpga_dev->fpga_adap[num]);
++        snprintf(fpga_dev->fpga_adap[num].adap.name,
++	    sizeof(fpga_dev->fpga_adap[num].adap.name),"fj-mdec (Port %d)", num);
++
++        fpga_dev->fpga_adap[num].port_index = num;
++        fpga_dev->fpga_adap[num].adap.owner = THIS_MODULE;
++        fpga_dev->fpga_adap[num].adap.algo = &t600_mdec_i2c_algorithm;
++        fpga_dev->fpga_adap[num].adap.retries = 1;
++
++        for_each_child_of_node(mdec_node, i2c_ctrl_node) {
++            rc = of_property_read_u32(i2c_ctrl_node, "reg", &reg);
++            if (rc){
++                continue;
++            }
++            if (num == reg){
++                break;
++            }
++        }
++
++        fpga_dev->fpga_adap[num].adap.dev.of_node = i2c_ctrl_node;
++        fpga_dev->fpga_adap[num].adap.dev.parent = &pdev->dev;
++        fpga_dev->fpga_adap[num].adap.class = I2C_CLASS_DEPRECATED;
++        fpga_dev->fpga_adap[num].parent = &pdev->dev;
++
++        rc = i2c_add_adapter(&fpga_dev->fpga_adap[num].adap);
++        if(rc){
++            dev_err(&pdev->dev, "failed to add adapter.\r\n");
++            return - ENODEV;
++        }
++    }
++
++    return rc;
++}
++
+ static int accton_fpga_probe(struct platform_device *pdev)
+ {
+     struct fpga_device* fpga_dev;
+@@ -1320,7 +1437,6 @@ static int accton_fpga_probe(struct platform_device *pdev)
+         goto err_out_int;
+     }
+ 
+-
+     fpga_dev = devm_kzalloc(&pdev->dev, sizeof(*fpga_dev), GFP_KERNEL);
+     if(fpga_dev == NULL)
+     {
+@@ -1357,6 +1473,14 @@ static int accton_fpga_probe(struct platform_device *pdev)
+     {
+         cdec_addr = fpga_dev->hw_addr;
+     }
++    else if(FJ_MDEC == (long)of_id->data)
++    {
++        rc = fpga_i2c_add_adapter(pdev);
++	if(rc)
++        {
++            goto err_out_unmap;
++        }
++    }
+ 
+     rc = sysfs_create_group(&pdev->dev.kobj, &root_group);
+     if(rc)
+@@ -1381,6 +1505,14 @@ err_out_int:
+ static int accton_fpga_remove(struct platform_device *pdev)
+ {
+     struct fpga_device *fpga_dev = platform_get_drvdata(pdev);
++    const struct of_device_id *of_id = of_match_device(t600_fpga_of_match, &pdev->dev);
++    int num;
++
++    if(FJ_MDEC == (long)of_id->data)
++    {
++        for(num=0; num<32; num++)
++            i2c_del_adapter(&fpga_dev->fpga_adap[num].adap);
++    }
+ 
+     if(fpga_dev->is_enable){
+         sysfs_remove_group(&pdev->dev.kobj, &fpga_group);
+-- 
+2.11.0
+
