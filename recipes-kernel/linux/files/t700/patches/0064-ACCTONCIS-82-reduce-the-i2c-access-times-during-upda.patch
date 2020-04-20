@@ -13,7 +13,7 @@ diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_md
 index 831b884..7f2773a 100755
 --- a/drivers/misc/accton_t600_fj_mdec.c
 +++ b/drivers/misc/accton_t600_fj_mdec.c
-@@ -37,7 +37,9 @@
+@@ -37,11 +37,13 @@
  #include <linux/delay.h>
  #include <linux/of.h>
  #include <linux/of_device.h>
@@ -23,6 +23,11 @@ index 831b884..7f2773a 100755
  #define FPGA_MNG_I2C_WORKAROUND                                 0
  #define DRIVER_NAME                                             "fujitsu_mdec_fpga"
  #define DRIVER_DESCRIPTION_NAME                                 "Fujitsu FPGA PCI device driver"
+-#define DRIVER_VERSION                                          "0.04"
++#define DRIVER_VERSION                                          "0.06"
+ #define DRIVER_DEBUG_MESSAGE_LEVEL                              8
+ #define DRIVER_MAX_BUFFER_LENGTH                                16
+ #define DRIVER_MAX_STRING_LENGTH                                (DRIVER_MAX_BUFFER_LENGTH - 1)
 @@ -160,6 +162,14 @@ enum fpga_sysfs_attributes
      PIU1_DCO_MDIO_LOCK, PIU2_DCO_MDIO_LOCK, PIU1_QSFP_LOCK, PIU2_QSFP_LOCK, MDEC_LOCK, PIU_RESCAN_LOCK,
  };
@@ -172,8 +177,7 @@ index 831b884..7f2773a 100755
 
  static int accton_fpga_probe(struct platform_device *pdev)
  {
-     struct fpga_device* fpga_dev;
-@@ -1320,7 +1437,6 @@ static int accton_fpga_probe(struct platform_device *pdev)
+@@ -1321,7 +1437,6 @@ static int accton_fpga_probe(struct platform_device *pdev)
          goto err_out_int;
      }
  
@@ -181,7 +185,7 @@ index 831b884..7f2773a 100755
      fpga_dev = devm_kzalloc(&pdev->dev, sizeof(*fpga_dev), GFP_KERNEL);
      if(fpga_dev == NULL)
      {
-@@ -1357,6 +1473,14 @@ static int accton_fpga_probe(struct platform_device *pdev)
+@@ -1358,6 +1473,14 @@ static int accton_fpga_probe(struct platform_device *pdev)
      {
          cdec_addr = fpga_dev->hw_addr;
      }
@@ -196,7 +200,7 @@ index 831b884..7f2773a 100755
  
      rc = sysfs_create_group(&pdev->dev.kobj, &root_group);
      if(rc)
-@@ -1381,6 +1505,14 @@ err_out_int:
+@@ -1382,6 +1505,14 @@ err_out_int:
  static int accton_fpga_remove(struct platform_device *pdev)
  {
      struct fpga_device *fpga_dev = platform_get_drvdata(pdev);
