@@ -1,6 +1,6 @@
-From ea2ca479c5f706ce6359d9581035013b48216662 Mon Sep 17 00:00:00 2001
-From: roy_chuang <roy_chuang@edge.core.com>
-Date: Fri, 24 Apr 2020 15:01:26 +0800
+From e74b52112339434447438db5e91130ea2f29b96e Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 29 Apr 2020 20:26:28 +0800
 Subject: [PATCH] Modify I2C & MDIO function. It return error if bus access
  error occurs.
 
@@ -9,7 +9,7 @@ Subject: [PATCH] Modify I2C & MDIO function. It return error if bus access
  1 file changed, 109 insertions(+), 74 deletions(-)
 
 diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
-index 7f2773a..6c98201 100755
+index 5b10ac3..df93a3c 100755
 --- a/drivers/misc/accton_t600_fj_mdec.c
 +++ b/drivers/misc/accton_t600_fj_mdec.c
 @@ -180,7 +180,6 @@ struct fpga_device
@@ -45,10 +45,10 @@ index 7f2773a..6c98201 100755
      {
          if(read_write == I2C_SMBUS_WRITE)
          {
--	    dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  WRITE\n");
--	    mutex_lock(&fpga_adap->i2c_lock);
--	    write_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command, data->byte);
--	    mutex_unlock(&fpga_adap->i2c_lock);
+-          dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  WRITE\n");
+-          mutex_lock(&fpga_adap->i2c_lock);
+-          write_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command, data->byte);
+-          mutex_unlock(&fpga_adap->i2c_lock);
 +            dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  WRITE\n");
 +            mutex_lock(&fpga_adap->i2c_lock);
 +            res = write_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command, data->byte);
@@ -58,13 +58,13 @@ index 7f2773a..6c98201 100755
 +                return res;
 +            }
          }
- 	else
+         else
          {
--	    dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  READ\n");
--	    mutex_lock(&fpga_adap->i2c_lock);
--	    value = read_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command);
--	    mutex_unlock(&fpga_adap->i2c_lock);
--	    data->byte = value;
+-          dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  READ\n");
+-          mutex_lock(&fpga_adap->i2c_lock);
+-          value = read_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command);
+-          mutex_unlock(&fpga_adap->i2c_lock);
+-          data->byte = value;
 +            dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  READ\n");
 +            mutex_lock(&fpga_adap->i2c_lock);
 +            res = read_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command);
@@ -201,7 +201,7 @@ index 7f2773a..6c98201 100755
      {
 -        write_port_eeprom_one_byte(fpga_dev, port, address, data);
 +        res = write_port_eeprom_one_byte(fpga_dev, port, address, data);
-+	if(res < 0){
++        if(res < 0){
 +            return res;
 +        }
      }
@@ -316,7 +316,7 @@ index 7f2773a..6c98201 100755
 +    }
 +
 +    if(I2C_CHK_BUS_BUSY_RETRY_COUNT == i){
-+	dev_err(dev, "I2C bus busy\n");
++        dev_err(dev, "I2C bus busy\n");
 +        return -EBUSY;
      }
          
@@ -346,7 +346,7 @@ index 7f2773a..6c98201 100755
 +    }
 +
 +    if(I2C_READ_STATUS_RETRY_COUNT == i){
-+	dev_err(dev, "check - I2C_IRQ_ERR_HL status is err, retry 3 timeout\n");
++        dev_err(dev, "check - I2C_IRQ_ERR_HL status is err, retry 3 timeout\n");
 +        return -ECOMM;
      }
      
