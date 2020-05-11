@@ -1,0 +1,69 @@
+From 4294a741e6a1466e3c8f492986a62fc132bf5239 Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 18 Mar 2020 21:08:42 +0800
+Subject: [PATCH] [T700-232] leap year issue Modify RTC to 2000 year base. The
+ default time is 2000/1/1 0:0:0.
+
+---
+ drivers/rtc/rtc-ds1307.c | 22 +++++++---------------
+ 1 file changed, 7 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/rtc/rtc-ds1307.c b/drivers/rtc/rtc-ds1307.c
+index c80e1c0..d8bbc62 100644
+--- a/drivers/rtc/rtc-ds1307.c
++++ b/drivers/rtc/rtc-ds1307.c
+@@ -373,9 +373,9 @@ static int ds1307_set_time(struct device *dev, struct rtc_time *t);
+ 
+ static void rtc_reset_to_default(struct rtc_time *tm)
+ {
+-    tm->tm_year = 70;
++    tm->tm_year = 100;
+     tm->tm_mon = 0;
+-    tm->tm_mday = 2;
++    tm->tm_mday = 1;
+     tm->tm_wday = 0;
+     tm->tm_hour = 0;
+     tm->tm_min = 0;
+@@ -409,21 +409,17 @@ static int ds1307_get_time(struct device *dev, struct rtc_time *t)
+ 	tmp = ds1307->regs[DS1307_REG_MONTH] & 0x1f;
+ 	t->tm_mon = bcd2bin(tmp) - 1;
+ 
+-#ifdef CONFIG_RTC_OVERFLOW_TO_DEFAULT
+-	t->tm_year = bcd2bin(ds1307->regs[DS1307_REG_YEAR]) + 70;
++	/* assume 20YY not 19YY, and ignore DS1337_BIT_CENTURY */
++	t->tm_year = bcd2bin(ds1307->regs[DS1307_REG_YEAR]) + 100;
+ 
+-	/*support from 1970/1/2 0:0:0 - 2033/12/31 23:59:59, otherwise, set default to 1970/1/2 0:0:0.
++#ifdef CONFIG_RTC_OVERFLOW_TO_DEFAULT
++	/*support from 2000/1/1 0:0:0 - 2037/12/31 23:59:59, otherwise, set default to 2000/1/1 0:0:0.
+ 	 */
+-	if ((t->tm_year < 70) || (t->tm_year == 70 && t->tm_mon == 0 && t->tm_mday == 1)
+-		|| (t->tm_year >= 134))  /* year < 1970 or year > 2033/12/31 */
++	if ((t->tm_year < 100) || (t->tm_year >= 138))  /* year < 2000 or year > 2033/12/31 */
+ 	{
+ 		rtc_reset_to_default(t);
+-
+ 		ds1307_set_time(dev,t);
+ 	}
+-#else
+-	/* assume 20YY not 19YY, and ignore DS1337_BIT_CENTURY */
+-	t->tm_year = bcd2bin(ds1307->regs[DS1307_REG_YEAR]) + 100;
+ #endif
+ 
+ 	dev_dbg(dev, "%s secs=%d, mins=%d, "
+@@ -456,12 +452,8 @@ static int ds1307_set_time(struct device *dev, struct rtc_time *t)
+ 	buf[DS1307_REG_MDAY] = bin2bcd(t->tm_mday);
+ 	buf[DS1307_REG_MONTH] = bin2bcd(t->tm_mon + 1);
+ 
+-#ifdef CONFIG_RTC_OVERFLOW_TO_DEFAULT
+-	tmp = t->tm_year - 70;
+-#else
+ 	/* assume 20YY not 19YY */
+ 	tmp = t->tm_year - 100;
+-#endif
+ 	buf[DS1307_REG_YEAR] = bin2bcd(tmp);
+ 
+ 	switch (ds1307->type) {
+-- 
+1.9.1
+

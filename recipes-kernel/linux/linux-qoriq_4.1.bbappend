@@ -65,6 +65,7 @@ SRC_URI_append_t600 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T600-NOR
                         file://${MACHINE}/patches/0053-Change-the-code-from-isync-to-asm-volatile-for-memor.patch  \
                         file://${MACHINE}/patches/0053-4.1-T600-3041-FIPS-disable-print-of-keys.patch              \
                         file://${MACHINE}/patches/0054-Send-ATA_CMD_IDLEIMMEDIATE-command-to-sda-when-syste.patch  \
+                        file://${MACHINE}/patches/0061-T700-232-leap-year-issue.patch                              \
                        "
 
 SRC_URI_append_t650 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T650-NOR-flash-partition.patch \
