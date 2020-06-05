@@ -1,0 +1,80 @@
+From 5db9b32fe521dbd91f3bfa976a4129b2f858233b Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge.core.com>
+Date: Thu, 4 Jun 2020 15:56:03 +0800
+Subject: [PATCH] Add reset_bt_status for T600 reset button.
+
+---
+ drivers/hwmon/accton_t600_cpld.c | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index 470ea12..5250a4a 100755
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -58,6 +58,8 @@
+ #define SYSTEM_RESET_REG            0x22
+ #define RESET_CONTROL_REG           0x26
+ #define OTP_RECORD_REG              0x27
++#define RESET_BT_STATUS_REG         0x29
++#define RESET_BT_COUNTER_REG        0x30
+ #define PIU_THERMAL_CONTROL_REG     0x19
+ 
+ struct t600_cpld_data {
+@@ -104,6 +106,8 @@ enum t600_cpld_sysfs_attributes {
+ };
+ static ssize_t show_bootstatus(struct device *dev, struct device_attribute *da,
+              char *buf);
++static ssize_t show_reset_bt_status(struct device *dev,
++             struct device_attribute *da, char *buf);
+ static ssize_t show_piu(struct device *dev, struct device_attribute *da,
+              char *buf);                
+ static ssize_t show_sfp(struct device *dev, struct device_attribute *da,
+@@ -161,6 +165,8 @@ static SENSOR_DEVICE_ATTR(piu_mgmt_pwr_good, S_IRUGO, show_pwr_status, NULL, PIU
+ static SENSOR_DEVICE_ATTR(system_reset, S_IWUSR, NULL, reset, RESET);
+ /* boot status attribute */
+ static SENSOR_DEVICE_ATTR(bootup_status, S_IRUGO, show_bootstatus, NULL, BOOTUP_STATUS);
++/* reset button status attribute */
++static SENSOR_DEVICE_ATTR(reset_bt_status, S_IRUGO, show_reset_bt_status, NULL, 0);
+ 
+ /* OTP contorl */
+ static SENSOR_DEVICE_ATTR(board_otp_status, S_IRUGO | S_IWUSR, show_otpstatus, set_otpstatus, BOARD_OTP_STATUS);
+@@ -185,6 +191,7 @@ static struct attribute *t600_cpld_attributes[] = {
+   &sensor_dev_attr_system_reset.dev_attr.attr,
+   /* bootup status */
+   &sensor_dev_attr_bootup_status.dev_attr.attr,
++  &sensor_dev_attr_reset_bt_status.dev_attr.attr,
+   /* psu attributes*/
+   DECLARE_PSU_ATTR(1),
+   DECLARE_PSU_ATTR(2),
+@@ -475,6 +482,28 @@ exit:
+     return status;  
+ }
+ 
++static ssize_t show_reset_bt_status(struct device *dev, struct device_attribute *da,
++             char *buf)
++{
++    int status;
++
++    struct i2c_client *client = to_i2c_client(dev);
++    struct t600_cpld_data *data = i2c_get_clientdata(client);
++    mutex_lock(&data->update_lock);
++    status = t600_cpld_read(client, RESET_BT_STATUS_REG);
++    if (unlikely(status < 0)) {
++        goto exit;
++    }
++
++    /* Clear counter of Reset Button. mask:0x03, value:0x03 */
++    t600_cpld_write(client, RESET_BT_COUNTER_REG, 0x03);
++    mutex_unlock(&data->update_lock);
++    return sprintf(buf, "%d\n", (status & 0x01));
++exit:
++    mutex_unlock(&data->update_lock);
++    return status;
++}
++
+ static ssize_t show_otpstatus(struct device *dev, struct device_attribute *da,
+              char *buf)
+ {
+-- 
+1.9.1
+
