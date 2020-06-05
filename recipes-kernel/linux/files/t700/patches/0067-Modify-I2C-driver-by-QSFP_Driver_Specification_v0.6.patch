@@ -16,7 +16,7 @@ index df93a3c..397848c 100755
  #define MDIO_BUS_CHK_OK                                         0x0000  // TBD
  #define MDIO_STATUS_BUSY                                        0x0001  // TBD
 +#define I2C_NO_ERROR                                            0x0
- 
+
  // MDEC
  #define MDEC_WRITE_MODE                                         (0x0001)
 @@ -74,7 +75,7 @@
@@ -27,7 +27,7 @@ index df93a3c..397848c 100755
 +#define I2C_READ_STATUS_RETRY_COUNT                             20
  #define I2C_ACC_CMD_WRITE                                       0x00000002
  #define I2C_ACC_CMD_READ                                        0x00000001
- 
+
 @@ -136,6 +137,7 @@ enum fpga_register_map
      I2C_ACC_CMD         = 0x00A00134,
      I2C_BUSY            = 0x00A00130,
@@ -44,7 +44,7 @@ index df93a3c..397848c 100755
 +    u32 set_add, set_dt, status, err_irq, err_conflict;
      int i;
      struct device *dev = fpga_dev->fpga_adap[port].parent;
- 
+
 @@ -1043,19 +1045,23 @@ static s32 write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8
          t600_fj_mdec_write32(set_dt, fpga_dev->hw_addr + I2C_WRITE_DT + (port << 16)); //
          // Write Trigger
@@ -58,13 +58,13 @@ index df93a3c..397848c 100755
              // NO Error
              break;  
          }
- 
+
 -        dev_dbg(dev, "I2C_IRQ_ERR_HL is err, retry count =%d\n", i+1);
 +        usleep_range(5000, 10000);
 +        dev_dbg(dev, "I2C_IRQ_ERR_HL:0x%x, I2C_CONFLICT_ERR:0x%x, retry:%d port:%d\n",
 +            err_irq, err_conflict, i+1, port);
      }
- 
+
      if(i == I2C_READ_STATUS_RETRY_COUNT)
      {
 -        dev_err(dev, "check - I2C_IRQ_ERR_HL status is err, retry 3 timeout\n");
@@ -72,9 +72,9 @@ index df93a3c..397848c 100755
 +            err_irq, err_conflict, i, port);
          return -ECOMM;
      }
- 
+
 @@ -1078,7 +1084,7 @@ static void read_port_eeprom_data(struct fpga_device* fpga_dev, u8 port, u8 *buf
- 
+
  static s32 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos)
  {
 -    u32 set_add, status;
@@ -85,7 +85,7 @@ index df93a3c..397848c 100755
 @@ -1125,15 +1131,21 @@ static s32 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 p
              return -EBUSY;
          }
- 
+
 -        status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_IRQ_ERR_HL + (port << 16)); //0x00An0120, n means port
 -        if(status == 0)
 +        err_irq = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_IRQ_ERR_HL + (port << 16)); //0x00An0120, n means port
@@ -99,14 +99,15 @@ index df93a3c..397848c 100755
 +        dev_dbg(dev, "I2C_IRQ_ERR_HL:0x%x, I2C_CONFLICT_ERR:0x%x, retry:%d port:%d\n",
 +            err_irq, err_conflict, i+1, port);
      }
- 
+
      if(I2C_READ_STATUS_RETRY_COUNT == i){
 -        dev_err(dev, "check - I2C_IRQ_ERR_HL status is err, retry 3 timeout\n");
 +        dev_err(dev, "I2C_IRQ_ERR_HL:0x%x, I2C_CONFLICT_ERR:0x%x, retry:%d port:%d\n",
 +            err_irq, err_conflict, i, port);
          return -ECOMM;
      }
-     
+
 -- 
 1.9.1
 
+                      
