@@ -151,6 +151,7 @@ SRC_URI_append_t700 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T700-NOR
                         file://${MACHINE}/patches/0062-Modify-pwm-function-for-T700.patch                          \
                         file://${MACHINE}/patches/0063-Modify-FAN_REG_CONT-index.patch                             \
                         file://${MACHINE}/patches/0064-ACCTONCIS-82-reduce-the-i2c-access-times-during-upda.patch  \
+                        file://${MACHINE}/patches/0065-Modify-I2C-MDIO-function.-It-return-error-if-bus-acc.patch  \
                         file://${MACHINE}/patches/0066-Add-attribute-to-read-reset-button-status.patch             \
                         file://${MACHINE}/patches/0067-Modify-I2C-driver-by-QSFP_Driver_Specification_v0.6.patch   \
                        "

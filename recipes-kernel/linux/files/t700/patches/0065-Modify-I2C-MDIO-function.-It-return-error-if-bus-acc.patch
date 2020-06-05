@@ -1,0 +1,356 @@
+From e74b52112339434447438db5e91130ea2f29b96e Mon Sep 17 00:00:00 2001
+From: aken_liu <aken_liu@accton.com.tw>
+Date: Wed, 29 Apr 2020 20:26:28 +0800
+Subject: [PATCH] Modify I2C & MDIO function. It return error if bus access
+ error occurs.
+
+---
+ drivers/misc/accton_t600_fj_mdec.c | 183 ++++++++++++++++++++++---------------
+ 1 file changed, 109 insertions(+), 74 deletions(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index 5b10ac3..df93a3c 100755
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -180,7 +180,6 @@ struct fpga_device
+     struct mutex app_piu1_dco_mdio_lock;
+     struct mutex app_piu2_dco_mdio_lock;
+     struct mutex app_piu_rescan;
+-    struct device dev;
+     struct fpga_adapter fpga_adap[PORT_NUMBER_MAX];
+ 
+     /* for read data */
+@@ -194,9 +193,9 @@ struct fpga_device
+ static struct mutex io_lock;
+ static char __iomem* cdec_addr;
+ 
+-static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos, u8 value);
++static s32 write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos, u8 value);
+ static void read_port_eeprom_data(struct fpga_device* fpga_dev, u8 port, u8 *buffer);
+-static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos);
++static s32 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos);
+ 
+ static ssize_t de_new_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count);
+ static ssize_t de_del_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count);
+@@ -244,7 +243,7 @@ static int t600_mdec_i2c_smbus_xfer(struct i2c_adapter *adap, u16 addr,
+     struct fpga_adapter *fpga_adap = i2c_get_adapdata(adap);
+     struct device* dev = fpga_adap->parent;
+     struct fpga_device* fpga_dev = dev_get_drvdata(dev);
+-    u8 value;
++    s32 res;
+ 
+     if(!fpga_dev->is_enable)
+     {
+@@ -257,18 +256,27 @@ static int t600_mdec_i2c_smbus_xfer(struct i2c_adapter *adap, u16 addr,
+     {
+         if(read_write == I2C_SMBUS_WRITE)
+         {
+-          dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  WRITE\n");
+-          mutex_lock(&fpga_adap->i2c_lock);
+-          write_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command, data->byte);
+-          mutex_unlock(&fpga_adap->i2c_lock);
++            dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  WRITE\n");
++            mutex_lock(&fpga_adap->i2c_lock);
++            res = write_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command, data->byte);
++            mutex_unlock(&fpga_adap->i2c_lock);
++
++            if(res < 0){
++                return res;
++            }
+         }
+         else
+         {
+-          dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  READ\n");
+-          mutex_lock(&fpga_adap->i2c_lock);
+-          value = read_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command);
+-          mutex_unlock(&fpga_adap->i2c_lock);
+-          data->byte = value;
++            dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  READ\n");
++            mutex_lock(&fpga_adap->i2c_lock);
++            res = read_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command);
++            mutex_unlock(&fpga_adap->i2c_lock);
++
++            if(res < 0){
++                return res;
++            }
++
++            data->byte = res;
+         }
+         break;
+     }
+@@ -342,11 +350,11 @@ static ssize_t qsfp_read_result(struct device* dev, struct device_attribute* att
+ } 
+ 
+ /* Refer to sheet "21.Driver Control" of "T600_DHAL Specification_v1.6.xlsx" */
+-static u32 mdio_access(struct device* dev, u32 mode, u32 page, u32 address, u32 data)
++static s32 mdio_access(struct device* dev, u32 mode, u32 page, u32 address, u32 data)
+ {
+     struct fpga_device* fpga_dev = dev_get_drvdata(dev);
+     u32 status;
+-    int i = 0;
++    int i = 0, j = 0;
+ 
+     // Check MDIO busy status
+     for(i = 0; i < MDIO_STATUS_CHK_RETRY_COUNT ; i++)
+@@ -359,7 +367,13 @@ static u32 mdio_access(struct device* dev, u32 mode, u32 page, u32 address, u32
+             break;
+         }
+     }
+-        
++
++    if(MDIO_STATUS_CHK_RETRY_COUNT == i)
++    {
++        dev_err(dev, "MDIO bus busy\n");
++        return -EBUSY;
++    }
++
+     // write
+     if(mode == MDIO_WRITE_MODE)
+     {
+@@ -415,29 +429,35 @@ MDIO_READ_BEGIN:
+                 break;
+             }
+         }
+-        
+-        // Bus Error Check    
+-        for(i = 0; i < MDIO_BUS_CHK_RETRY_COUNT ; i++)
++
++        if(MDIO_STATUS_CHK_RETRY_COUNT == i){
++            dev_err(dev, "MDIO bus busy\n");
++            return -EBUSY;
++        }
++
++        // Bus Error Check
++        // Check bus error bit
++        status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_AC_BUS_TAERR);
++        status &= 0x0001;
++
++        if(status != MDIO_BUS_CHK_OK)
+         {
+-              // Check bus error bit
+-            status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_AC_BUS_TAERR);
+-            status &= 0x0001;
+-              
+-            if(status == MDIO_BUS_CHK_OK)
++            j++;
++            if(j < MDIO_BUS_CHK_RETRY_COUNT)
+             {
+-                  // NOT BUSY
+-                  break;
++                goto MDIO_READ_BEGIN;
+             }
+-            if(i == MDIO_BUS_CHK_RETRY_COUNT -1)
+-            {
+-                goto MDIO_READ_BEGIN;   
+-            }
+-#if 0
+-            printk(KERN_DEBUG "[DEBUG] I2C bus busy, 1retry count =%d\r\n", i);
+-#endif
+-        }   
+-        // Read data
++        }
++
++        if(j == MDIO_BUS_CHK_RETRY_COUNT)
++        {
++            dev_err(dev, "check - MDIO_ERR status is err, retry 5 timeout\n");
++            return -ECOMM;
++        }
++
++        // Read data. MDIO are 16-bit. Return non-negative value on success.
+         status = t600_fj_mdec_read32(fpga_dev->hw_addr + BMD_BUS_MDIO_RD_DT);
++        status = status & 0x0000FFFF;
+     }
+ 
+     return status;
+@@ -446,7 +466,8 @@ MDIO_READ_BEGIN:
+ static ssize_t mdio_action_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count)
+ {
+     struct fpga_device* fpga_dev = dev_get_drvdata(dev);
+-    u32 mode, page, address, data, status;
++    u32 mode, page, address, data;
++    s32 status;
+ 
+     if(sscanf(buf, "0x%x 0x%x 0x%x 0x%x",&mode, &page, &address, &data) != 4)
+     {
+@@ -460,8 +481,13 @@ static ssize_t mdio_action_store(struct device* dev, struct device_attribute* at
+     }
+ 
+     status = mdio_access(dev, mode, page, address, data);
+-    if((mode == MDIO_READ_MODE) && (status >= 0))
++    if(status < 0)
+     {
++        return status;
++    }
++    if(mode == MDIO_READ_MODE)
++    {
++
+         fpga_dev->mdio_read_result_data = status;
+     }
+ 
+@@ -504,6 +530,7 @@ static ssize_t qsfp_action_store(struct device* dev, struct device_attribute* at
+ {
+     u32 mode, port, address, data;
+     struct fpga_device* fpga_dev = NULL;
++    s32 res;
+         
+     fpga_dev = dev_get_drvdata(dev);
+ 
+@@ -522,14 +549,19 @@ static ssize_t qsfp_action_store(struct device* dev, struct device_attribute* at
+ 
+     if(mode == I2C_WRITE_MODE)
+     {
+-        write_port_eeprom_one_byte(fpga_dev, port, address, data);
++        res = write_port_eeprom_one_byte(fpga_dev, port, address, data);
++        if(res < 0){
++            return res;
++        }
+     }
+     else
+     {
+-        fpga_dev->qsfp_read_result_data = read_port_eeprom_one_byte(fpga_dev, port, address);
+-#if 0
+-        printk(KERN_DEBUG "[DEBUG] READ - I2C_READ_DT = %02x\n", qsfp_read_result_data);
+-#endif
++        res = read_port_eeprom_one_byte(fpga_dev, port, address);
++        if(res < 0){
++            return res;
++        }
++
++        fpga_dev->qsfp_read_result_data = res;
+     }
+ 
+     return count;
+@@ -704,7 +736,7 @@ static ssize_t app_dco_mdio_lock_store(struct device* dev, struct device_attribu
+ static ssize_t temp_show(struct device* dev, struct device_attribute* attr, char* buf)
+ {
+     struct sensor_device_attribute* dev_attr = to_sensor_dev_attr(attr);
+-    u32 value;
++    s32 value;
+ 
+     /* Refer to appendix_DCO_MDIO_IO_MAP(Preliminary).xlsx */
+     value = mdio_access(dev, MDIO_READ_MODE, (dev_attr->index - TEMP1_INPUT), 0xee76, 0x0);
+@@ -977,10 +1009,11 @@ static ssize_t read_port_eeprom(struct device* dev, struct device_attribute* att
+ }
+ 
+ /* refer to sheet "QSFP28_Driver" of "03_05_QSFP28_Driver_Specification_v0.4.xlsx" */
+-static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos, u8 value)
++static s32 write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos, u8 value)
+ {
+     u32 set_add, set_dt, status;
+     int i;
++    struct device *dev = fpga_dev->fpga_adap[port].parent;
+ 
+     /* Port number is inversed by mdec. Port1=CL12 */
+     port = 11 - port;
+@@ -993,16 +1026,12 @@ static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8
+         }
+ 
+         usleep_range(200, 400);
+-        if(i == (I2C_CHK_BUS_BUSY_RETRY_COUNT -1))
+-        {
+-            printk(KERN_ERR "I2C bus is busy, retry 200 timeout \r\n");
+-        }
+-#if 0
+-        else
+-        {
+-            printk(KERN_DEBUG "[DEBUG] I2C bus is busy, retry count =%d\r\n", i + 1);
+-        }
+-#endif
++    }
++
++    if(i == I2C_CHK_BUS_BUSY_RETRY_COUNT)
++    {
++        dev_err(dev, "I2C bus busy\n");
++        return -EBUSY;
+     }
+ 
+     for(i = 0; i < I2C_READ_STATUS_RETRY_COUNT ; i++)
+@@ -1021,17 +1050,16 @@ static void write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8
+             break;  
+         }
+ 
+-        if(i == (I2C_READ_STATUS_RETRY_COUNT -1))
+-        {
+-            printk(KERN_ERR "check - I2C_IRQ_ERR_HL status is err, retry 3 timeout \r\n");
+-        }
+-#if 0
+-        else
+-        {
+-            printk(KERN_DEBUG "[DEBUG] check - I2C_IRQ_ERR_HL status is err, retry count =%d\r\n", i+1);
+-        }
+-#endif
++        dev_dbg(dev, "I2C_IRQ_ERR_HL is err, retry count =%d\n", i+1);
+     }
++
++    if(i == I2C_READ_STATUS_RETRY_COUNT)
++    {
++        dev_err(dev, "check - I2C_IRQ_ERR_HL status is err, retry 3 timeout\n");
++        return -ECOMM;
++    }
++
++    return 0;
+ }
+ 
+ static void read_port_eeprom_data(struct fpga_device* fpga_dev, u8 port, u8 *buffer)
+@@ -1048,11 +1076,12 @@ static void read_port_eeprom_data(struct fpga_device* fpga_dev, u8 port, u8 *buf
+     }
+ }
+ 
+-static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos)
++static s32 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 pos)
+ {
+     u32 set_add, status;
+     u8 value;
+     int i, j;
++    struct device *dev = fpga_dev->fpga_adap[port].parent;
+ 
+     /* Port number is inversed by mdec. Port1=CL12 */
+     port = 11 - port;
+@@ -1065,9 +1094,11 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+             break;
+         }
+         usleep_range(200, 400);
+-#if 0
+-        printk(KERN_DEBUG "[DEBUG] I2C bus busy, 2retry count =%d\r\n", i + 1);
+-#endif
++    }
++
++    if(I2C_CHK_BUS_BUSY_RETRY_COUNT == i){
++        dev_err(dev, "I2C bus busy\n");
++        return -EBUSY;
+     }
+         
+     for(i = 0; i < I2C_READ_STATUS_RETRY_COUNT ; i++)
+@@ -1087,9 +1118,11 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+                 // NOT BUSY
+                 break;
+             }
+-#if 0
+-            printk(KERN_DEBUG "[DEBUG] I2C bus busy, 3retry count =%d\r\n", j);
+-#endif
++        }
++
++        if(I2C_CHK_BUS_BUSY_RETRY_COUNT == j){
++            dev_err(dev, "I2C bus busy\n");
++            return -EBUSY;
+         }
+ 
+         status = t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_IRQ_ERR_HL + (port << 16)); //0x00An0120, n means port
+@@ -1097,9 +1130,11 @@ static u8 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 po
+         {
+             break;  
+         }
+-#if 0
+-        printk(KERN_DEBUG "[DEBUG] check - I2C_IRQ_ERR_HL status = %08x(Err), count = %d\n", status, i+1);
+-#endif
++    }
++
++    if(I2C_READ_STATUS_RETRY_COUNT == i){
++        dev_err(dev, "check - I2C_IRQ_ERR_HL status is err, retry 3 timeout\n");
++        return -ECOMM;
+     }
+     
+     value = (u8)t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_READ_DT + (port << 16)); //0x00An0144, n means port
+-- 
+1.9.1
+
