@@ -18,7 +18,7 @@ index 470ea12..5250a4a 100755
 +#define RESET_BT_STATUS_REG         0x29
 +#define RESET_BT_COUNTER_REG        0x30
  #define PIU_THERMAL_CONTROL_REG     0x19
- 
+
  struct t600_cpld_data {
 @@ -104,6 +106,8 @@ enum t600_cpld_sysfs_attributes {
  };
@@ -35,7 +35,7 @@ index 470ea12..5250a4a 100755
  static SENSOR_DEVICE_ATTR(bootup_status, S_IRUGO, show_bootstatus, NULL, BOOTUP_STATUS);
 +/* reset button status attribute */
 +static SENSOR_DEVICE_ATTR(reset_bt_status, S_IRUGO, show_reset_bt_status, NULL, 0);
- 
+
  /* OTP contorl */
  static SENSOR_DEVICE_ATTR(board_otp_status, S_IRUGO | S_IWUSR, show_otpstatus, set_otpstatus, BOARD_OTP_STATUS);
 @@ -185,6 +191,7 @@ static struct attribute *t600_cpld_attributes[] = {
@@ -49,7 +49,7 @@ index 470ea12..5250a4a 100755
 @@ -475,6 +482,28 @@ exit:
      return status;  
  }
- 
+
 +static ssize_t show_reset_bt_status(struct device *dev, struct device_attribute *da,
 +             char *buf)
 +{
