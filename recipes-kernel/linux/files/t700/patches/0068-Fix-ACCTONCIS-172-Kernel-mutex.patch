@@ -1,0 +1,134 @@
+From 192de07e54f113e41e58a12796ab4cbc67f19c34 Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge.core.com>
+Date: Tue, 9 Jun 2020 17:32:56 +0800
+Subject: [PATCH] Fix ACCTONCIS-172 Kernel mutex.
+
+1. Use mutex_lock_interruptible instead of mutex_lock
+2. Fellow "QSFP_Driver_Specification_v0.6.1" to modify QSFP driver.
+---
+ drivers/misc/accton_t600_fj_mdec.c | 32 ++++++++++++++++++++------------
+ 1 file changed, 20 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index 397848c..2390002 100755
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -207,7 +207,7 @@ static u32 t600_fj_mdec_read32(void *addr)
+ {
+     u32 value;
+ 
+-    mutex_lock(&io_lock);
++    mutex_lock_interruptible(&io_lock);
+     value = ioread32(addr);
+     mutex_unlock(&io_lock);
+ 
+@@ -218,7 +218,7 @@ static void t600_fj_mdec_write32(u32 value, void *addr)
+ {
+     u32 data = cpu_to_le32(value);
+ 
+-    mutex_lock(&io_lock);
++    mutex_lock_interruptible(&io_lock);
+     iowrite32(data, addr);
+ 
+     /* According to FJ's suggestion, we change the code from isync() to asm volatile() for memory barrier in PowerPC.
+@@ -259,7 +259,7 @@ static int t600_mdec_i2c_smbus_xfer(struct i2c_adapter *adap, u16 addr,
+         if(read_write == I2C_SMBUS_WRITE)
+         {
+             dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  WRITE\n");
+-            mutex_lock(&fpga_adap->i2c_lock);
++            mutex_lock_interruptible(&fpga_adap->i2c_lock);
+             res = write_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command, data->byte);
+             mutex_unlock(&fpga_adap->i2c_lock);
+ 
+@@ -270,7 +270,7 @@ static int t600_mdec_i2c_smbus_xfer(struct i2c_adapter *adap, u16 addr,
+         else
+         {
+             dev_dbg(dev, "I2C_SMBUS_BYTE_DATA:  READ\n");
+-            mutex_lock(&fpga_adap->i2c_lock);
++            mutex_lock_interruptible(&fpga_adap->i2c_lock);
+             res = read_port_eeprom_one_byte(fpga_dev, fpga_adap->port_index, command);
+             mutex_unlock(&fpga_adap->i2c_lock);
+ 
+@@ -590,7 +590,7 @@ static ssize_t app_lock_store(struct device* dev, struct device_attribute* attr,
+         case MDEC_LOCK:
+             if(is_locked)
+             {
+-                mutex_lock(&fpga_dev->app_lock);
++                mutex_lock_interruptible(&fpga_dev->app_lock);
+             }
+             else
+             {
+@@ -604,7 +604,7 @@ static ssize_t app_lock_store(struct device* dev, struct device_attribute* attr,
+         case PIU_RESCAN_LOCK:
+             if(is_locked)
+             {
+-                mutex_lock(&fpga_dev->app_piu_rescan);
++                mutex_lock_interruptible(&fpga_dev->app_piu_rescan);
+             }
+             else
+             {
+@@ -645,7 +645,7 @@ static ssize_t app_qsfp_lock_store(struct device* dev, struct device_attribute*
+         case PIU1_QSFP_LOCK:
+             if(is_locked)
+             {
+-                mutex_lock(&fpga_dev->app_piu1_qsfp_lock);
++                mutex_lock_interruptible(&fpga_dev->app_piu1_qsfp_lock);
+             }
+             else
+             {
+@@ -660,7 +660,7 @@ static ssize_t app_qsfp_lock_store(struct device* dev, struct device_attribute*
+         case PIU2_QSFP_LOCK:
+             if(is_locked)
+             {
+-                mutex_lock(&fpga_dev->app_piu2_qsfp_lock);
++                mutex_lock_interruptible(&fpga_dev->app_piu2_qsfp_lock);
+             }
+             else
+             {
+@@ -701,7 +701,7 @@ static ssize_t app_dco_mdio_lock_store(struct device* dev, struct device_attribu
+         case PIU1_DCO_MDIO_LOCK:
+             if(is_locked)
+             {
+-                mutex_lock(&fpga_dev->app_piu1_dco_mdio_lock);
++                mutex_lock_interruptible(&fpga_dev->app_piu1_dco_mdio_lock);
+             }
+             else
+             {
+@@ -716,7 +716,7 @@ static ssize_t app_dco_mdio_lock_store(struct device* dev, struct device_attribu
+         case PIU2_DCO_MDIO_LOCK:
+             if(is_locked)
+             {
+-                mutex_lock(&fpga_dev->app_piu2_dco_mdio_lock);
++                mutex_lock_interruptible(&fpga_dev->app_piu2_dco_mdio_lock);
+             }
+             else
+             {
+@@ -1062,7 +1062,11 @@ static s32 write_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8
+     {
+         dev_err(dev, "I2C_IRQ_ERR_HL:0x%x, I2C_CONFLICT_ERR:0x%x, retry:%d port:%d\n",
+             err_irq, err_conflict, i, port);
+-        return -ECOMM;
++
++        /* Assert QSFP FLT when IRQ error only */
++        if(err_irq != I2C_NO_ERROR){
++            return -ECOMM;
++        }
+     }
+ 
+     return 0;
+@@ -1146,7 +1150,11 @@ static s32 read_port_eeprom_one_byte(struct fpga_device* fpga_dev, u8 port, u8 p
+     if(I2C_READ_STATUS_RETRY_COUNT == i){
+         dev_err(dev, "I2C_IRQ_ERR_HL:0x%x, I2C_CONFLICT_ERR:0x%x, retry:%d port:%d\n",
+             err_irq, err_conflict, i, port);
+-        return -ECOMM;
++
++        /* Assert QSFP FLT when IRQ error only */
++        if(err_irq != I2C_NO_ERROR){
++            return -ECOMM;
++        }
+     }
+     
+     value = (u8)t600_fj_mdec_read32(fpga_dev->hw_addr + I2C_READ_DT + (port << 16)); //0x00An0144, n means port
+-- 
+1.9.1
+
