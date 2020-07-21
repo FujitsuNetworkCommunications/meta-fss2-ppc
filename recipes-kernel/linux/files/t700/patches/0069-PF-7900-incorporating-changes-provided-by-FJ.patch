@@ -1,0 +1,64 @@
+From 4e7b08e9698fe07097aaa13cc185fa377262e47d Mon Sep 17 00:00:00 2001
+From: Sharathkumar Doddagadduvallimohanraj
+ <sharathkumar.doddagadduvallimohanraj@us.fujitsu.com>
+Date: Mon, 22 Jun 2020 05:14:05 -0500
+Subject: [PATCH] PF-7900 incorporating changes provided by FJ
+
+---
+ drivers/hwmon/accton_t600_cpld.c | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/hwmon/accton_t600_cpld.c b/drivers/hwmon/accton_t600_cpld.c
+index 5393a8a..6b75529 100755
+--- a/drivers/hwmon/accton_t600_cpld.c
++++ b/drivers/hwmon/accton_t600_cpld.c
+@@ -353,7 +353,7 @@ static ssize_t reset(struct device *dev, struct device_attribute *da,
+      *
+      */
+ 
+-    mutex_lock(&data->update_lock);
++    //mutex_lock(&data->update_lock);
+     if (reset == 1) {
+         /* RESET_ALL when SW hard reset */
+ 
+@@ -417,11 +417,11 @@ static ssize_t reset(struct device *dev, struct device_attribute *da,
+     if (unlikely(status < 0)) {
+         goto exit;
+     }
+-    mutex_unlock(&data->update_lock);
++    //mutex_unlock(&data->update_lock);
+     return count;
+ 
+ exit:
+-    mutex_unlock(&data->update_lock);
++    //mutex_unlock(&data->update_lock);
+     return status;
+ }
+ 
+@@ -478,6 +478,7 @@ static void t600_idle_disk(const char* devicename) {
+ int reset_by_cpld(int reset_type)
+ {
+ 	const char data_buf[3][12] = {{'0', '\n'},{'1', '\n'},{ '2', '\n'}};
++  int ret = 0;
+ 
+ 	if(NULL == t600_cpld_dev){
+ 		return -1;
+@@ -494,7 +495,14 @@ int reset_by_cpld(int reset_type)
+ 		t600_idle_disk("/dev/sda");
+ 	}
+ 
+-	return reset(t600_cpld_dev, NULL, data_buf[reset_type], 1);
++  // WA of TSERCIS-2572
++  while(1)  //infinite loop
++  {
++      ret = reset(t600_cpld_dev, NULL, data_buf[reset_type], 1);
++      printk (KERN_ERR "%s:%s():%d: Retry reset.....ret=%d\n",__FILE__, __FUNCTION__, __LINE__,ret);
++      msleep(3000);
++  }
++  return ret;
+ }
+ 
+ EXPORT_SYMBOL(reset_by_cpld);
+-- 
+1.8.3.1
+
