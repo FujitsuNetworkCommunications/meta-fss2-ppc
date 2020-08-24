@@ -1,0 +1,34 @@
+From 25861113767dd4d7b1c49325e315137aa4efa14e Mon Sep 17 00:00:00 2001
+From: "Barlow, Terry" <Terry.Barlow@us.fujitsu.com>
+Date: Mon, 11 Feb 2019 08:28:24 -0600
+Subject: [PATCH] 4.1-call-dma_contiguous_reserve-to-allocate-CMA
+
+---
+ arch/powerpc/kernel/prom.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/powerpc/kernel/prom.c b/arch/powerpc/kernel/prom.c
+index 9b19d96..ec1b0f1 100644
+--- a/arch/powerpc/kernel/prom.c
++++ b/arch/powerpc/kernel/prom.c
+@@ -34,6 +34,7 @@
+ #include <linux/of.h>
+ #include <linux/of_fdt.h>
+ #include <linux/libfdt.h>
++#include <linux/dma-contiguous.h>
+ 
+ #include <asm/prom.h>
+ #include <asm/rtas.h>
+@@ -706,6 +707,9 @@ void __init early_init_devtree(void *params)
+ 	limit = ALIGN(memory_limit ?: memblock_phys_mem_size(), PAGE_SIZE);
+ 	memblock_enforce_memory_limit(limit);
+ 
++	printk(KERN_ERR "%s : calling dma_contiguous_reserve() \n", __func__);
++
++	dma_contiguous_reserve(0);
+ 	memblock_allow_resize();
+ 	memblock_dump_all();
+ 
+-- 
+1.8.3.1
+

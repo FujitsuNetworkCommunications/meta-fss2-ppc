@@ -1,0 +1,30 @@
+From 67e3f8f6f87edda0faae3678c95c377743dba32c Mon Sep 17 00:00:00 2001
+From: Sharathkumar Doddagadduvallimohanraj
+ <sharathkumar.doddagadduvallimohanraj@us.fujitsu.com>
+Date: Wed, 25 Dec 2019 08:35:02 -0600
+Subject: [PATCH] PF-7427 configure CMA to allocate memory at 512MB address
+
+---
+ drivers/base/dma-contiguous.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/base/dma-contiguous.c b/drivers/base/dma-contiguous.c
+index 13b4339..0be4f1d 100644
+--- a/drivers/base/dma-contiguous.c
++++ b/drivers/base/dma-contiguous.c
+@@ -48,9 +48,9 @@ struct cma *dma_contiguous_default_area;
+  * should use cma= kernel parameter.
+  */
+ static const phys_addr_t size_bytes = CMA_SIZE_MBYTES * SZ_1M;
+-static phys_addr_t size_cmdline = -1;
+-static phys_addr_t base_cmdline;
+-static phys_addr_t limit_cmdline;
++static phys_addr_t size_cmdline = (16*SZ_1M);
++static phys_addr_t base_cmdline = (512*SZ_1M);
++static phys_addr_t limit_cmdline = ((512+16)*SZ_1M);
+ 
+ static int __init early_cma(char *p)
+ {
+-- 
+1.8.3.1
+
