@@ -156,6 +156,12 @@ SRC_URI_append_t700 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T700-NOR
                         file://${MACHINE}/patches/0067-Modify-I2C-driver-by-QSFP_Driver_Specification_v0.6.patch   \
                         file://${MACHINE}/patches/0068-Fix-ACCTONCIS-172-Kernel-mutex.patch                        \
                         file://${MACHINE}/patches/0069-PF-7900-incorporating-changes-provided-by-FJ.patch          \
+                        file://${MACHINE}/patches/0001-4.1-Add-DMA-CONTIGUOUS.patch                                \
+                        file://${MACHINE}/patches/0001-Add-dma-contiguous.h-powerpc-include-asm.patch              \
+                        file://${MACHINE}/patches/0001-4.1-call-dma_contiguous_reserve-to-allocate-CMA.patch       \
+                        file://${MACHINE}/patches/0001-4.1-export-dma_contiguos-alloc-and-release-functions.patch  \
+                        file://${MACHINE}/patches/0001-PF-7427-fix-compilation.patch                               \
+                        file://${MACHINE}/patches/0001-PF-7427-configure-memory-at-512MB.patch                     \
                        "
 
 
@@ -216,4 +222,4 @@ do_deploy_prepend() {
     done
 }
 
-PR := "${PR}.15"
+PR := "${PR}.16"

@@ -1,0 +1,58 @@
+From 67cd09ae90032b4daba3a0132d5f5d572810df3f Mon Sep 17 00:00:00 2001
+From: "Barlow, Terry" <Terry.Barlow@us.fujitsu.com>
+Date: Mon, 11 Feb 2019 09:22:08 -0600
+Subject: [PATCH] 4.1-export-dma_contiguos-alloc-and-release-functions
+
+---
+ drivers/base/dma-contiguous.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/base/dma-contiguous.c b/drivers/base/dma-contiguous.c
+index 950fff9..13b4339 100644
+--- a/drivers/base/dma-contiguous.c
++++ b/drivers/base/dma-contiguous.c
+@@ -26,6 +26,7 @@
+ #include <linux/err.h>
+ #include <linux/sizes.h>
+ #include <linux/dma-contiguous.h>
++#include <linux/module.h>
+ #include <linux/cma.h>
+ 
+ #ifdef CONFIG_CMA_SIZE_MBYTES
+@@ -111,7 +112,7 @@ void __init dma_contiguous_reserve(phys_addr_t limit)
+ 	phys_addr_t selected_limit = limit;
+ 	bool fixed = false;
+ 
+-	pr_debug("%s(limit %08lx)\n", __func__, (unsigned long)limit);
++	pr_err("%s(limit %08lx)\n", __func__, (unsigned long)limit);
+ 
+ 	if (size_cmdline != -1) {
+ 		selected_size = size_cmdline;
+@@ -132,7 +133,7 @@ void __init dma_contiguous_reserve(phys_addr_t limit)
+ 	}
+ 
+ 	if (selected_size && !dma_contiguous_default_area) {
+-		pr_debug("%s: reserving %ld MiB for global area\n", __func__,
++		pr_err("%s: reserving %ld MiB for global area\n", __func__,
+ 			 (unsigned long)selected_size / SZ_1M);
+ 
+ 		dma_contiguous_reserve_area(selected_size, selected_base,
+@@ -195,6 +196,7 @@ struct page *dma_alloc_from_contiguous(struct device *dev, int count,
+ 
+ 	return cma_alloc(dev_get_cma_area(dev), count, align);
+ }
++EXPORT_SYMBOL(dma_alloc_from_contiguous);
+ 
+ /**
+  * dma_release_from_contiguous() - release allocated pages
+@@ -211,6 +213,7 @@ bool dma_release_from_contiguous(struct device *dev, struct page *pages,
+ {
+ 	return cma_release(dev_get_cma_area(dev), pages, count);
+ }
++EXPORT_SYMBOL(dma_release_from_contiguous);
+ 
+ /*
+  * Support for reserved memory regions defined in device tree
+-- 
+1.8.3.1
+
