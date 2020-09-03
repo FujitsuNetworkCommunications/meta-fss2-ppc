@@ -162,6 +162,7 @@ SRC_URI_append_t700 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T700-NOR
                         file://${MACHINE}/patches/0001-4.1-export-dma_contiguos-alloc-and-release-functions.patch  \
                         file://${MACHINE}/patches/0001-PF-7427-fix-compilation.patch                               \
                         file://${MACHINE}/patches/0001-PF-7427-configure-memory-at-512MB.patch                     \
+                        file://${MACHINE}/patches/0070-Modify-CL-power-sequence-in-mdec-driver.patch               \
                        "
 
 
