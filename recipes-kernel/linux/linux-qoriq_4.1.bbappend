@@ -156,6 +156,7 @@ SRC_URI_append_t700 += "file://${MACHINE}/patches/0002-4.1-Chage-to-fit-T700-NOR
                         file://${MACHINE}/patches/0067-Modify-I2C-driver-by-QSFP_Driver_Specification_v0.6.patch   \
                         file://${MACHINE}/patches/0068-Fix-ACCTONCIS-172-Kernel-mutex.patch                        \
                         file://${MACHINE}/patches/0069-PF-7900-incorporating-changes-provided-by-FJ.patch          \
+                        file://${MACHINE}/patches/0070-Modify-CL-power-sequence-in-mdec-driver.patch               \
                        "
 
 
@@ -216,4 +217,4 @@ do_deploy_prepend() {
     done
 }
 
-PR := "${PR}.15"
+PR := "${PR}.16"

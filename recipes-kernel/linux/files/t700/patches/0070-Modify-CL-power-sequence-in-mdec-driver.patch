@@ -1,0 +1,32 @@
+From 2b33321bdec960ec5f17466188475b2bf3696c73 Mon Sep 17 00:00:00 2001
+From: roy_chuang <roy_chuang@edge-core.com>
+Date: Wed, 2 Sep 2020 14:28:36 +0800
+Subject: [PATCH] Modify CL power sequence in mdec driver.
+
+Hotta-san request that don't power on CL port in mdec driver. DHAL should do it in provision.
+---
+ drivers/misc/accton_t600_fj_mdec.c | 8 --------
+ 1 file changed, 8 deletions(-)
+
+diff --git a/drivers/misc/accton_t600_fj_mdec.c b/drivers/misc/accton_t600_fj_mdec.c
+index 2390002..e570881 100755
+--- a/drivers/misc/accton_t600_fj_mdec.c
++++ b/drivers/misc/accton_t600_fj_mdec.c
+@@ -1382,14 +1382,6 @@ static ssize_t de_new_store(struct device* dev, struct device_attribute* attr, c
+         {
+             t600_fj_mdec_write32(0x1, fpga_dev->hw_addr + HW_ModSelL + (i << 16));
+         }
+-
+-        /* Power on all port.
+-           0: Power OFF(default)
+-           1: Power ON
+-           [0]: Port1 ~ [5]: Port6
+-           [8]: Port7 ~ [13]: Port12
+-        */
+-        t600_fj_mdec_write32(0x00003F3F, fpga_dev->hw_addr + HW_VCC);
+     }
+ 
+     rc = sysfs_create_group(&dev->kobj, &fpga_group);
+-- 
+1.9.1
+
